@@ -37,17 +37,13 @@ COOKIE_MAX_AGE = settings.session_expiry_days * 24 * 60 * 60
 
 def set_session_cookie(response: Response, token: str) -> None:
     signed_token = create_signed_token(token)
-    is_https = settings.app_url.startswith("https")
-    # Use SameSite=None for cross-origin requests (requires Secure=True)
-    # Fall back to Lax for local development
-    samesite: str = "none" if is_https else "lax"
     response.set_cookie(
         key=COOKIE_NAME,
         value=signed_token,
         max_age=COOKIE_MAX_AGE,
         httponly=True,
-        samesite=samesite,
-        secure=is_https,
+        samesite="lax",
+        secure=settings.app_url.startswith("https"),
         domain=settings.cookie_domain,
         path="/",
     )
