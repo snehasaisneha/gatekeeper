@@ -137,6 +137,7 @@ async def create_user(request: AdminCreateUser, admin: AdminUser, db: DbSession)
     )
     db.add(user)
     await db.flush()
+    await db.refresh(user)
 
     # Send invitation email
     if request.auto_approve:
@@ -226,6 +227,7 @@ async def approve_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> U
 
     user.status = UserStatus.APPROVED
     await db.flush()
+    await db.refresh(user)
 
     email_service = EmailService(db=db)
     await email_service.send_registration_approved(user.email)
@@ -263,6 +265,7 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
 
     user.status = UserStatus.REJECTED
     await db.flush()
+    await db.refresh(user)
 
     return UserRead.model_validate(user)
 
