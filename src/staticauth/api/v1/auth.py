@@ -369,8 +369,9 @@ async def passkey_register_verify(
 
     passkey_service = PasskeyService(db)
     credential_dict = request.credential.model_dump()
+    passkey_name = request.name or "Passkey"
     passkey = await passkey_service.verify_registration_with_challenge(
-        current_user, credential_dict, challenge
+        current_user, credential_dict, challenge, name=passkey_name
     )
 
     if not passkey:

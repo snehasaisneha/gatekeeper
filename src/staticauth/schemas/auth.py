@@ -90,6 +90,11 @@ class PasskeyVerifyRequest(BaseModel):
         ...,
         description="WebAuthn credential response from browser",
     )
+    name: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Optional user-friendly name for the passkey",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -102,7 +107,8 @@ class PasskeyVerifyRequest(BaseModel):
                         "clientDataJSON": "eyJ0eXBlIjoi...",
                         "authenticatorData": "SZYN5Y...",
                     },
-                }
+                },
+                "name": "My MacBook",
             }
         }
     }

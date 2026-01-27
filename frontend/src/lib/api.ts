@@ -106,10 +106,10 @@ export const api = {
         method: 'POST',
       }),
 
-    passkeyRegisterVerify: (credential: object) =>
+    passkeyRegisterVerify: (credential: object, name?: string) =>
       request<MessageResponse>('/auth/passkey/register/verify', {
         method: 'POST',
-        body: JSON.stringify({ credential }),
+        body: JSON.stringify({ credential, name }),
       }),
 
     passkeySigninOptions: (email?: string) =>

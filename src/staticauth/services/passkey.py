@@ -85,8 +85,6 @@ class PasskeyService:
         """Legacy method - uses instance-level challenge storage (doesn't work across requests)."""
         challenge = self._challenges.pop(str(user.id), None)
         if not challenge:
-            print(f"[PASSKEY REG] No challenge found for user {user.id}")
-            print(f"[PASSKEY REG] Available challenges: {list(self._challenges.keys())}")
             return None
 
         return await self.verify_registration_with_challenge(user, credential, challenge, name)
@@ -117,8 +115,7 @@ class PasskeyService:
             self.db.add(passkey)
             await self.db.flush()
             return passkey
-        except Exception as e:
-            print(f"[PASSKEY REG] verify_registration error: {e}")
+        except Exception:
             return None
 
     async def generate_authentication_options(
@@ -168,14 +165,12 @@ class PasskeyService:
         try:
             raw_id = credential.get("rawId") or credential.get("id")
             if not raw_id:
-                print("[PASSKEY] No rawId or id in credential")
                 return None
 
             credential_id = base64.urlsafe_b64decode(raw_id + "==")
 
             passkey = await self._get_credential_by_id(credential_id)
             if not passkey:
-                print("[PASSKEY] No passkey found for credential_id")
                 return None
 
             verification = verify_authentication_response(
@@ -193,8 +188,7 @@ class PasskeyService:
             stmt = select(User).where(User.id == passkey.user_id)
             result = await self.db.execute(stmt)
             return result.scalar_one_or_none()
-        except Exception as e:
-            print(f"[PASSKEY] verify_authentication error: {e}")
+        except Exception:
             return None
 
     async def _get_user_credentials(self, user_id: uuid.UUID) -> list[PasskeyCredential]:

@@ -3,8 +3,10 @@ import { startRegistration } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { api, ApiError } from '@/lib/api';
-import { Loader2, KeyRound, Trash2, Plus } from 'lucide-react';
+import { Loader2, KeyRound, Trash2, Plus, X } from 'lucide-react';
 
 interface Passkey {
   id: string;
@@ -16,6 +18,8 @@ export function PasskeyManager() {
   const [passkeys, setPasskeys] = React.useState<Passkey[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isRegistering, setIsRegistering] = React.useState(false);
+  const [showNameInput, setShowNameInput] = React.useState(false);
+  const [passkeyName, setPasskeyName] = React.useState('');
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
@@ -41,6 +45,18 @@ export function PasskeyManager() {
     loadPasskeys();
   }, [loadPasskeys]);
 
+  const handleStartRegister = () => {
+    setShowNameInput(true);
+    setPasskeyName('');
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleCancelRegister = () => {
+    setShowNameInput(false);
+    setPasskeyName('');
+  };
+
   const handleRegister = async () => {
     setIsRegistering(true);
     setError(null);
@@ -49,9 +65,11 @@ export function PasskeyManager() {
     try {
       const options = await api.auth.passkeyRegisterOptions();
       const credential = await startRegistration({ optionsJSON: options as any });
-      await api.auth.passkeyRegisterVerify(credential);
+      await api.auth.passkeyRegisterVerify(credential, passkeyName || undefined);
 
       setSuccess('Passkey registered successfully');
+      setShowNameInput(false);
+      setPasskeyName('');
       await loadPasskeys();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -116,14 +134,37 @@ export function PasskeyManager() {
           </Alert>
         )}
 
-        <Button onClick={handleRegister} disabled={isRegistering}>
-          {isRegistering ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
+        {showNameInput ? (
+          <div className="space-y-3 p-3 rounded-lg border bg-muted/50">
+            <Label htmlFor="passkey-name">Passkey Name (optional)</Label>
+            <Input
+              id="passkey-name"
+              placeholder="e.g., MacBook Pro, iPhone"
+              value={passkeyName}
+              onChange={(e) => setPasskeyName(e.target.value)}
+              maxLength={50}
+            />
+            <div className="flex gap-2">
+              <Button onClick={handleRegister} disabled={isRegistering}>
+                {isRegistering ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
+                Register Passkey
+              </Button>
+              <Button variant="outline" onClick={handleCancelRegister} disabled={isRegistering}>
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button onClick={handleStartRegister}>
             <Plus className="h-4 w-4 mr-2" />
-          )}
-          Add Passkey
-        </Button>
+            Add Passkey
+          </Button>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
