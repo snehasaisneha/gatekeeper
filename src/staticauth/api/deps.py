@@ -30,6 +30,7 @@ async def get_current_user(
 
     session_service = SessionService(db)
     user = await session_service.get_user_by_token(token)
+    print(f"[AUTH DEBUG] user from db: {user}")
 
     if not user:
         raise HTTPException(

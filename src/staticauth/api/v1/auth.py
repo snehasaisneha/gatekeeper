@@ -150,6 +150,7 @@ async def register_verify(
     if auto_approve:
         session_service = SessionService(db)
         session = await session_service.create(user)
+        await db.commit()  # Commit before responding so /auth/me can find the session
         set_session_cookie(response, session.token)
 
         return AuthResponse(
@@ -252,6 +253,7 @@ async def signin_verify(
 
     session_service = SessionService(db)
     session = await session_service.create(user)
+    await db.commit()  # Commit before responding so /auth/me can find the session
     set_session_cookie(response, session.token)
 
     return AuthResponse(
@@ -441,6 +443,7 @@ async def passkey_signin_verify(
 
     session_service = SessionService(db)
     session = await session_service.create(user)
+    await db.commit()  # Commit before responding so /auth/me can find the session
     set_session_cookie(response, session.token)
 
     return AuthResponse(
