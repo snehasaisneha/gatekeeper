@@ -19,7 +19,9 @@ class OTP(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     code: Mapped[str] = mapped_column(String(6), nullable=False)
-    purpose: Mapped[OTPPurpose] = mapped_column(Enum(OTPPurpose), nullable=False)
+    purpose: Mapped[OTPPurpose] = mapped_column(
+        Enum(OTPPurpose, values_callable=lambda x: [e.value for e in x]), nullable=False
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

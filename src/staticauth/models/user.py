@@ -20,7 +20,9 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     status: Mapped[UserStatus] = mapped_column(
-        Enum(UserStatus), default=UserStatus.PENDING, nullable=False
+        Enum(UserStatus, values_callable=lambda x: [e.value for e in x]),
+        default=UserStatus.PENDING,
+        nullable=False,
     )
     is_admin: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
