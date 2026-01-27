@@ -187,6 +187,7 @@ async def update_user(
         user.is_admin = request.is_admin
 
     await db.flush()
+    await db.refresh(user)
 
     if was_pending and user.status == UserStatus.APPROVED:
         email_service = EmailService(db=db)

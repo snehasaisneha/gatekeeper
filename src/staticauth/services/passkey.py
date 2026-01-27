@@ -158,12 +158,14 @@ class PasskeyService:
         try:
             raw_id = credential.get("rawId") or credential.get("id")
             if not raw_id:
+                print("[PASSKEY] No rawId or id in credential")
                 return None
 
             credential_id = base64.urlsafe_b64decode(raw_id + "==")
 
             passkey = await self._get_credential_by_id(credential_id)
             if not passkey:
+                print("[PASSKEY] No passkey found for credential_id")
                 return None
 
             verification = verify_authentication_response(
@@ -181,7 +183,8 @@ class PasskeyService:
             stmt = select(User).where(User.id == passkey.user_id)
             result = await self.db.execute(stmt)
             return result.scalar_one_or_none()
-        except Exception:
+        except Exception as e:
+            print(f"[PASSKEY] verify_authentication error: {e}")
             return None
 
     async def _get_user_credentials(self, user_id: uuid.UUID) -> list[PasskeyCredential]:
