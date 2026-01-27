@@ -258,6 +258,46 @@ You can now sign in to your account at {self.settings.frontend_url}/signin
         """
         return await self._send_with_suppression_check(to_email, subject, html_body, text_body)
 
+    async def send_pending_registration_notification(
+        self, admin_email: str, pending_user_email: str
+    ) -> bool:
+        """Notify admin of a new pending registration."""
+        subject = f"{self.settings.app_name} - New registration pending approval"
+        admin_url = f"{self.settings.frontend_url}/admin"
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .email-box {{ background: #f5f5f5; padding: 12px 16px; border-radius: 6px; margin: 16px 0; }}
+                .button {{ display: inline-block; padding: 12px 24px; background: #1a1a1a; color: #ffffff !important; text-decoration: none; border-radius: 6px; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>{self.settings.app_name}</h2>
+                <p>A new user has registered and is waiting for approval:</p>
+                <div class="email-box"><strong>{pending_user_email}</strong></div>
+                <p>Please review this request in the admin panel.</p>
+                <a href="{admin_url}" class="button">Review Pending Registrations</a>
+            </div>
+        </body>
+        </html>
+        """
+        text_body = f"""
+{self.settings.app_name}
+
+A new user has registered and is waiting for approval:
+
+{pending_user_email}
+
+Please review this request in the admin panel: {admin_url}
+        """
+        return await self._send_with_suppression_check(admin_email, subject, html_body, text_body)
+
     async def send_invitation(self, to_email: str, invited_by: str) -> bool:
         """Send invitation email when admin creates a user."""
         subject = f"You've been invited to {self.settings.app_name}"

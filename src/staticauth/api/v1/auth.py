@@ -158,8 +158,15 @@ async def register_verify(
             user=UserResponse.model_validate(user),
         )
     else:
-        email_service = EmailService()
+        email_service = EmailService(db=db)
         await email_service.send_registration_pending(email)
+
+        # Notify all admins of the pending registration
+        admin_stmt = select(User).where(User.is_admin == True)  # noqa: E712
+        admin_result = await db.execute(admin_stmt)
+        admins = admin_result.scalars().all()
+        for admin in admins:
+            await email_service.send_pending_registration_notification(admin.email, email)
 
         return AuthResponse(
             message="Registration pending approval",
