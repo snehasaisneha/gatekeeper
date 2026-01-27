@@ -22,10 +22,10 @@ class OTP(Base):
     purpose: Mapped[OTPPurpose] = mapped_column(
         Enum(OTPPurpose, values_callable=lambda x: [e.value for e in x]), nullable=False
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
     used: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(), server_default=func.now(), nullable=False
     )
 
     def __repr__(self) -> str:
@@ -33,9 +33,7 @@ class OTP(Base):
 
     @property
     def is_expired(self) -> bool:
-        from datetime import timezone
-
-        return datetime.now(timezone.utc) > self.expires_at
+        return datetime.utcnow() > self.expires_at
 
     @property
     def is_valid(self) -> bool:

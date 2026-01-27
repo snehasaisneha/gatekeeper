@@ -27,10 +27,10 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False, nullable=False)
     is_seeded: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     sessions: Mapped[list["Session"]] = relationship(  # noqa: F821
