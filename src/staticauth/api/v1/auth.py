@@ -44,11 +44,12 @@ def set_session_cookie(response: Response, token: str) -> None:
         httponly=True,
         samesite="lax",
         secure=settings.app_url.startswith("https"),
+        domain=settings.cookie_domain,
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(key=COOKIE_NAME)
+    response.delete_cookie(key=COOKIE_NAME, domain=settings.cookie_domain)
 
 
 @router.post(

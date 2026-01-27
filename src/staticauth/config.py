@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     accepted_domains: str = ""
     otp_expiry_minutes: int = 10
     session_expiry_days: int = 30
+    cookie_domain: str | None = None  # e.g., "engg.artpark.ai" for production
 
     # WebAuthn
     webauthn_rp_id: str = "localhost"
