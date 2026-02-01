@@ -5,11 +5,12 @@ import { cn } from '@/lib/utils';
 interface OTPInputProps {
   value: string;
   onChange: (value: string) => void;
+  onComplete?: (value: string) => void;
   disabled?: boolean;
   className?: string;
 }
 
-export function OTPInput({ value, onChange, disabled, className }: OTPInputProps) {
+export function OTPInput({ value, onChange, onComplete, disabled, className }: OTPInputProps) {
   const inputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
   const [localValues, setLocalValues] = React.useState<string[]>(
     value.split('').concat(Array(6 - value.length).fill(''))
@@ -62,8 +63,12 @@ export function OTPInput({ value, onChange, disabled, className }: OTPInputProps
     if (pastedData) {
       const newValues = pastedData.split('').concat(Array(6 - pastedData.length).fill(''));
       setLocalValues(newValues);
-      onChange(newValues.join(''));
+      const fullValue = newValues.join('');
+      onChange(fullValue);
       inputRefs.current[Math.min(pastedData.length, 5)]?.focus();
+      if (fullValue.length === 6 && onComplete) {
+        onComplete(fullValue);
+      }
     }
   };
 

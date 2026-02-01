@@ -38,15 +38,14 @@ export function SignInForm() {
     }
   };
 
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otp.length !== 6) return;
+  const verifyOtp = async (code: string) => {
+    if (code.length !== 6 || isLoading) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      await api.auth.signinVerify(email, otp);
+      await api.auth.signinVerify(email, code);
       window.location.href = '/';
     } catch (err) {
       if (err instanceof ApiError) {
@@ -57,6 +56,11 @@ export function SignInForm() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    verifyOtp(otp);
   };
 
   const handleBack = () => {
@@ -96,7 +100,7 @@ export function SignInForm() {
           <p className="text-sm text-muted-foreground">
             We sent a 6-digit code to {email}
           </p>
-          <OTPInput value={otp} onChange={setOtp} disabled={isLoading} />
+          <OTPInput value={otp} onChange={setOtp} onComplete={verifyOtp} disabled={isLoading} />
         </div>
 
         <Button type="submit" className="w-full" disabled={isLoading || otp.length !== 6}>
