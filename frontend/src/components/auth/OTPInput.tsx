@@ -42,7 +42,12 @@ export function OTPInput({ value, onChange, onComplete, disabled, className }: O
     }
 
     setLocalValues(newValues);
-    onChange(newValues.join(''));
+    const fullValue = newValues.join('');
+    onChange(fullValue);
+
+    if (fullValue.length === 6 && onComplete) {
+      onComplete(fullValue);
+    }
   };
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
