@@ -307,36 +307,36 @@ Please review this request in the admin panel: {admin_url}
         <head>
             <meta charset="utf-8">
             <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #1a1a1a; color: #ffffff !important; text-decoration: none; border-radius: 6px; margin-top: 20px; }}
-                .info-box {{ background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0; }}
-                .info-box h4 {{ margin: 0 0 8px 0; }}
-                .info-box ul {{ margin: 8px 0 0 0; padding-left: 20px; }}
+                .button {{ display: inline-block; padding: 12px 24px; background: #1a1a1a; color: #ffffff !important; text-decoration: none; border-radius: 6px; margin: 16px 0; }}
+                .divider {{ border-top: 1px solid #e5e5e5; margin: 32px 0; }}
+                .details {{ color: #666; font-size: 14px; }}
+                .details h4 {{ color: #333; margin: 16px 0 8px 0; font-size: 14px; }}
+                .details ul {{ margin: 8px 0 0 0; padding-left: 20px; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <h2>{self.settings.app_name}</h2>
-                <p>You've been added as a <strong>Super Admin</strong> by {invited_by}.</p>
+                <p><strong>{invited_by}</strong> added you as a <strong>Super Admin</strong>.</p>
+                <p>Sign in with your email to get started.</p>
+                <a href="{self.settings.frontend_url}/signin" class="button">Sign In</a>
 
-                <div class="info-box">
+                <div class="divider"></div>
+
+                <div class="details">
                     <h4>What is {self.settings.app_name}?</h4>
-                    <p>{self.settings.app_name} is a centralized authentication platform that manages access to multiple applications.</p>
-                </div>
+                    <p>{self.settings.app_name} is a centralized authentication platform that manages single sign-on access to multiple applications.</p>
 
-                <div class="info-box">
-                    <h4>As a Super Admin, you can:</h4>
+                    <h4>What can Super Admins do?</h4>
                     <ul>
                         <li>Create and manage user accounts</li>
                         <li>Create and configure applications</li>
                         <li>Grant or revoke user access to apps</li>
-                        <li>Review access requests</li>
+                        <li>Review and approve access requests</li>
                     </ul>
                 </div>
-
-                <p>Sign in with your email address to get started.</p>
-                <a href="{self.settings.frontend_url}/signin" class="button">Sign In</a>
             </div>
         </body>
         </html>
@@ -344,18 +344,20 @@ Please review this request in the admin panel: {admin_url}
         text_body = f"""
 {self.settings.app_name}
 
-You've been added as a Super Admin by {invited_by}.
+{invited_by} added you as a Super Admin.
+
+Sign in with your email to get started: {self.settings.frontend_url}/signin
+
+---
 
 What is {self.settings.app_name}?
-{self.settings.app_name} is a centralized authentication platform that manages access to multiple applications.
+{self.settings.app_name} is a centralized authentication platform that manages single sign-on access to multiple applications.
 
-As a Super Admin, you can:
+What can Super Admins do?
 - Create and manage user accounts
 - Create and configure applications
 - Grant or revoke user access to apps
-- Review access requests
-
-Sign in with your email address to get started: {self.settings.frontend_url}/signin
+- Review and approve access requests
         """
         return await self._send_with_suppression_check(to_email, subject, html_body, text_body)
 
