@@ -23,6 +23,7 @@ class App(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     app_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    roles: Mapped[str] = mapped_column(Text, default="admin,user", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), nullable=False
     )

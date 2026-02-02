@@ -55,7 +55,7 @@ export function TopBar({ appName = 'Gatekeeper' }: TopBarProps) {
               className="flex items-center gap-2"
               onClick={() => setIsOpen(!isOpen)}
             >
-              <span className="text-sm max-w-[200px] truncate">{user.email}</span>
+              <span className="text-sm max-w-[200px] truncate">{user.name || user.email}</span>
               <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </Button>
 

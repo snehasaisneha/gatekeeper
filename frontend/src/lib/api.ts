@@ -41,6 +41,7 @@ export interface App {
   is_public: boolean;
   description: string | null;
   app_url: string | null;
+  roles: string;
   created_at: string;
 }
 
@@ -252,7 +253,7 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    updateApp: (slug: string, data: { name?: string; is_public?: boolean; description?: string; app_url?: string }) =>
+    updateApp: (slug: string, data: { name?: string; is_public?: boolean; description?: string; app_url?: string; roles?: string }) =>
       request<App>(`/admin/apps/${slug}`, {
         method: 'PATCH',
         body: JSON.stringify(data),

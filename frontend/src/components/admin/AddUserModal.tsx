@@ -56,8 +56,8 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
       // Create the user
       const user = await api.admin.createUser(email, isAdmin, true);
 
-      // Grant access to selected apps (if any)
-      if (selectedApps.size > 0) {
+      // Grant access to selected apps (if any) - skip for super admins
+      if (!isAdmin && selectedApps.size > 0) {
         await api.admin.bulkGrantAccess({
           emails: [user.email],
           app_slugs: Array.from(selectedApps),
@@ -121,48 +121,55 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
                 type="checkbox"
                 id="is-admin"
                 checked={isAdmin}
-                onChange={(e) => setIsAdmin(e.target.checked)}
+                onChange={(e) => {
+                  setIsAdmin(e.target.checked);
+                  if (e.target.checked) {
+                    setSelectedApps(new Set()); // Super admins have access to all apps
+                  }
+                }}
                 className="h-4 w-4"
                 disabled={isSubmitting}
               />
-              <Label htmlFor="is-admin">Make Super Admin (can manage all users and apps)</Label>
+              <Label htmlFor="is-admin">Make Super Admin (has access to all apps)</Label>
             </div>
 
-            <div className="space-y-2">
-              <Label>Grant access to apps (optional)</Label>
-              <p className="text-xs text-muted-foreground">
-                User will receive an email notification for each app they're granted access to.
-              </p>
-              {isLoadingApps ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : apps.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">No apps available.</p>
-              ) : (
-                <div className="rounded-md border max-h-48 overflow-y-auto">
-                  {apps.map((app) => (
-                    <label
-                      key={app.slug}
-                      className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer border-b last:border-b-0"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedApps.has(app.slug)}
-                        onChange={() => toggleApp(app.slug)}
-                        className="h-4 w-4"
-                        disabled={isSubmitting}
-                      />
-                      <AppWindow className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm">{app.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{app.slug}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            {!isAdmin && (
+              <div className="space-y-2">
+                <Label>Grant access to apps (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  User will receive an email notification for each app they're granted access to.
+                </p>
+                {isLoadingApps ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : apps.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">No apps available.</p>
+                ) : (
+                  <div className="rounded-md border max-h-48 overflow-y-auto">
+                    {apps.map((app) => (
+                      <label
+                        key={app.slug}
+                        className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer border-b last:border-b-0"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedApps.has(app.slug)}
+                          onChange={() => toggleApp(app.slug)}
+                          className="h-4 w-4"
+                          disabled={isSubmitting}
+                        />
+                        <AppWindow className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm">{app.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{app.slug}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2 justify-end pt-2">
               <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>

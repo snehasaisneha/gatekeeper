@@ -51,6 +51,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
   const [editDescription, setEditDescription] = React.useState('');
   const [editAppUrl, setEditAppUrl] = React.useState('');
   const [editIsPublic, setEditIsPublic] = React.useState(false);
+  const [editRoles, setEditRoles] = React.useState('admin,user');
   const [isSavingApp, setIsSavingApp] = React.useState(false);
   const [hasAppChanges, setHasAppChanges] = React.useState(false);
 
@@ -97,6 +98,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
       setEditDescription(detail.description || '');
       setEditAppUrl(detail.app_url || '');
       setEditIsPublic(detail.is_public);
+      setEditRoles(detail.roles || 'admin,user');
       setHasAppChanges(false);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -118,6 +120,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
         description: editDescription !== (appDetail.description || '') ? editDescription : undefined,
         app_url: editAppUrl !== (appDetail.app_url || '') ? editAppUrl : undefined,
         is_public: editIsPublic !== appDetail.is_public ? editIsPublic : undefined,
+        roles: editRoles !== appDetail.roles ? editRoles : undefined,
       });
       // Update local state
       setAppDetail({ ...appDetail, ...updated });
@@ -139,9 +142,10 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
       editName !== appDetail.name ||
       editDescription !== (appDetail.description || '') ||
       editAppUrl !== (appDetail.app_url || '') ||
-      editIsPublic !== appDetail.is_public;
+      editIsPublic !== appDetail.is_public ||
+      editRoles !== appDetail.roles;
     setHasAppChanges(changed);
-  }, [editName, editDescription, editAppUrl, editIsPublic, appDetail]);
+  }, [editName, editDescription, editAppUrl, editIsPublic, editRoles, appDetail]);
 
   const handleToggleExpand = async (slug: string) => {
     if (expandedApp === slug) {
@@ -472,14 +476,26 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                             />
                           </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor={`edit-desc-${app.slug}`}>Description</Label>
-                          <Input
-                            id={`edit-desc-${app.slug}`}
-                            value={editDescription}
-                            onChange={(e) => setEditDescription(e.target.value)}
-                            placeholder="A brief description of your app"
-                          />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor={`edit-desc-${app.slug}`}>Description</Label>
+                            <Input
+                              id={`edit-desc-${app.slug}`}
+                              value={editDescription}
+                              onChange={(e) => setEditDescription(e.target.value)}
+                              placeholder="A brief description of your app"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`edit-roles-${app.slug}`}>Roles</Label>
+                            <Input
+                              id={`edit-roles-${app.slug}`}
+                              value={editRoles}
+                              onChange={(e) => setEditRoles(e.target.value)}
+                              placeholder="admin,user"
+                            />
+                            <p className="text-xs text-muted-foreground">Comma-separated list of roles</p>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -560,33 +576,6 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                         </div>
                       )}
 
-                      {/* Grant Access Form */}
-                      <div>
-                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                          <UserPlus className="h-4 w-4" />
-                          Grant Access
-                        </h4>
-                        <form onSubmit={handleGrantAccess} className="flex gap-2">
-                          <Input
-                            value={grantEmail}
-                            onChange={(e) => setGrantEmail(e.target.value)}
-                            placeholder="user@example.com"
-                            type="email"
-                            required
-                            className="flex-1"
-                          />
-                          <Input
-                            value={grantRole}
-                            onChange={(e) => setGrantRole(e.target.value)}
-                            placeholder="Role (optional)"
-                            className="w-32"
-                          />
-                          <Button type="submit" disabled={isGranting}>
-                            {isGranting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Grant'}
-                          </Button>
-                        </form>
-                      </div>
-
                       {/* Users with Access */}
                       <div>
                         <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
@@ -641,6 +630,39 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                             </table>
                           </div>
                         )}
+                      </div>
+
+                      {/* Grant Access Form */}
+                      <div>
+                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                          <UserPlus className="h-4 w-4" />
+                          Grant Access
+                        </h4>
+                        <form onSubmit={handleGrantAccess} className="flex gap-2">
+                          <Input
+                            value={grantEmail}
+                            onChange={(e) => setGrantEmail(e.target.value)}
+                            placeholder="user@example.com"
+                            type="email"
+                            required
+                            className="flex-1"
+                          />
+                          <select
+                            value={grantRole}
+                            onChange={(e) => setGrantRole(e.target.value)}
+                            className="h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          >
+                            <option value="">No role</option>
+                            {(appDetail?.roles || 'admin,user').split(',').map((role) => (
+                              <option key={role.trim()} value={role.trim()}>
+                                {role.trim()}
+                              </option>
+                            ))}
+                          </select>
+                          <Button type="submit" disabled={isGranting}>
+                            {isGranting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Grant'}
+                          </Button>
+                        </form>
                       </div>
                     </div>
                   )}

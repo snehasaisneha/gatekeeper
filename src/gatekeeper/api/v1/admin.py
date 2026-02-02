@@ -380,6 +380,7 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
         is_public=request.is_public,
         description=request.description,
         app_url=request.app_url,
+        roles=request.roles,
     )
     db.add(app)
     await db.flush()
@@ -392,6 +393,7 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
         is_public=app.is_public,
         description=app.description,
         app_url=app.app_url,
+        roles=app.roles,
         created_at=app.created_at,
     )
 
@@ -444,6 +446,7 @@ async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
         is_public=app.is_public,
         description=app.description,
         app_url=app.app_url,
+        roles=app.roles,
         created_at=app.created_at,
         users=users,
     )
@@ -505,6 +508,8 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
         app.description = request.description
     if request.app_url is not None:
         app.app_url = request.app_url
+    if request.roles is not None:
+        app.roles = request.roles
 
     await db.flush()
     await db.refresh(app)
@@ -516,6 +521,7 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
         is_public=app.is_public,
         description=app.description,
         app_url=app.app_url,
+        roles=app.roles,
         created_at=app.created_at,
     )
 

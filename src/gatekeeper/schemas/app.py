@@ -11,6 +11,11 @@ class AppCreate(BaseModel):
     is_public: bool = Field(default=False, description="Whether the app is publicly visible")
     description: str | None = Field(None, max_length=1000, description="App description")
     app_url: str | None = Field(None, max_length=500, description="URL to the app")
+    roles: str = Field(
+        default="admin,user",
+        max_length=500,
+        description="Comma-separated list of allowed roles",
+    )
 
 
 class AppRead(BaseModel):
@@ -22,6 +27,7 @@ class AppRead(BaseModel):
     is_public: bool
     description: str | None
     app_url: str | None
+    roles: str
     created_at: datetime
 
 
@@ -42,6 +48,7 @@ class AppUpdate(BaseModel):
     is_public: bool | None = None
     description: str | None = Field(None, max_length=1000)
     app_url: str | None = Field(None, max_length=500)
+    roles: str | None = Field(None, max_length=500, description="Comma-separated list of roles")
 
 
 class AppList(BaseModel):
@@ -67,6 +74,7 @@ class AppDetail(BaseModel):
     is_public: bool
     description: str | None
     app_url: str | None
+    roles: str
     created_at: datetime
     users: list[AppUserAccess]
 

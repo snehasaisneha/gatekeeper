@@ -87,14 +87,20 @@ async def validate(
     if not current_user:
         return Response(status_code=status.HTTP_401_UNAUTHORIZED)
 
-    # Set user header for all authenticated requests
-    response.headers["X-Auth-User"] = current_user.email
+    # Build base headers for all authenticated requests
+    base_headers = {"X-Auth-User": current_user.email}
+    if current_user.name:
+        base_headers["X-Auth-Name"] = current_user.name
 
     # No app specified - pure identity check
     if not x_gk_app:
+        return Response(status_code=status.HTTP_200_OK, headers=base_headers)
+
+    # Super admins have access to all apps
+    if current_user.is_admin:
         return Response(
             status_code=status.HTTP_200_OK,
-            headers={"X-Auth-User": current_user.email},
+            headers={**base_headers, "X-Auth-Role": "admin"},
         )
 
     # Look up the app
@@ -107,10 +113,7 @@ async def validate(
         if settings.default_app_access == "deny":
             return Response(status_code=status.HTTP_403_FORBIDDEN)
         # default_app_access == "allow"
-        return Response(
-            status_code=status.HTTP_200_OK,
-            headers={"X-Auth-User": current_user.email},
-        )
+        return Response(status_code=status.HTTP_200_OK, headers=base_headers)
 
     # App registered - check user access
     access_stmt = select(UserAppAccess).where(
@@ -123,8 +126,8 @@ async def validate(
     if not access:
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
-    # User has access - return headers
-    headers = {"X-Auth-User": current_user.email}
+    # User has access - return headers with role if set
+    headers = {**base_headers}
     if access.role:
         headers["X-Auth-Role"] = access.role
 
