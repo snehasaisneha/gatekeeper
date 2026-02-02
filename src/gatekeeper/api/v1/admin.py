@@ -344,6 +344,7 @@ async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
                 is_public=a.is_public,
                 description=a.description,
                 app_url=a.app_url,
+                roles=a.roles,
                 created_at=a.created_at,
             )
             for a in apps
