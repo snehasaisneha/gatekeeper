@@ -1,161 +1,113 @@
 # Nginx Configuration
 
-## Architecture Overview
+## Architecture
 
 ```
-Internet
-    │
-    ▼
+                         Internet
+                            │
+                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Nginx (SSL termination, routing)                           │
-│  - routing.conf: main server, certbot, subdomain routing    │
-└─────────────────────────────────────────────────────────────┘
-    │
-    ├─► auth.example.com (gatekeeper.conf)
-    │   └─ NO auth_request - publicly accessible
-    │   └─ Serves: frontend + API
-    │
-    └─► docs.example.com (protected-app.conf)
-        └─ auth_request to Gatekeeper
-        └─ 401 → redirect to login
-        └─ 403 → access denied
-        └─ 200 → proxy to app
+│                    ROUTING SERVER                            │
+│                    (public IP)                               │
+│                                                              │
+│  routing-gatekeeper.conf      routing-protected-app.conf    │
+│  auth.example.com             docs.example.com              │
+│         │                            │                       │
+│         │ proxy                      │ auth_request + proxy  │
+└─────────┼────────────────────────────┼───────────────────────┘
+          │                            │
+          ▼                            ▼
+┌──────────────────┐         ┌──────────────────┐
+│ GATEKEEPER SERVER│         │    APP SERVER    │
+│ (10.0.0.10)      │         │   (10.0.0.20)    │
+│                  │         │                  │
+│ gatekeeper-      │◄────────│                  │
+│ server.conf      │ validate│ app-server.conf  │
+│ :8000            │         │ :3000            │
+└──────────────────┘         └──────────────────┘
 ```
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `routing.conf` | Main routing server (SSL, certbot, include other configs) |
-| `gatekeeper.conf` | Gatekeeper frontend + API (NO auth) |
-| `protected-app.conf` | Template for protected apps (WITH auth) |
+| File | Runs On | Purpose |
+|------|---------|---------|
+| `gatekeeper-server.conf` | Gatekeeper server | Serves frontend + proxies API |
+| `app-server.conf` | App server | Serves your app (template) |
+| `routing-gatekeeper.conf` | Routing server | Proxies to Gatekeeper (NO auth) |
+| `routing-protected-app.conf` | Routing server | Auth + proxy to app (template) |
 
-## Quick Start
+## Setup
 
-### 1. Set Up Routing Server
+### 1. Gatekeeper Server (10.0.0.10)
 
 ```bash
-# Copy main routing config
-sudo cp routing.conf /etc/nginx/sites-available/example.com
-sudo nano /etc/nginx/sites-available/example.com
-# Edit: server_name, ssl_certificate paths, domain names
+# Copy config
+sudo cp gatekeeper-server.conf /etc/nginx/sites-available/gatekeeper
+sudo nano /etc/nginx/sites-available/gatekeeper
+# Edit: frontend_root, uvicorn port
 
 # Enable
-sudo ln -s /etc/nginx/sites-available/example.com /etc/nginx/sites-enabled/
-
-# Get wildcard SSL (or individual certs)
-sudo certbot certonly --nginx -d example.com -d "*.example.com"
-# Or individual: sudo certbot --nginx -d auth.example.com -d docs.example.com
-
+sudo ln -s /etc/nginx/sites-available/gatekeeper /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 2. Configure Gatekeeper
-
-```bash
-# Copy gatekeeper config
-sudo cp gatekeeper.conf /etc/nginx/snippets/gatekeeper.conf
-sudo nano /etc/nginx/snippets/gatekeeper.conf
-# Edit: frontend_root path, backend port
-
-# It's included by routing.conf, no need to enable separately
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-### 3. Add a Protected App
+### 2. App Server (10.0.0.20)
 
 ```bash
 # Copy template
-sudo cp protected-app.conf /etc/nginx/snippets/protected-docs.conf
-sudo nano /etc/nginx/snippets/protected-docs.conf
-# Edit: app_slug, backend address
+sudo cp app-server.conf /etc/nginx/sites-available/myapp
+sudo nano /etc/nginx/sites-available/myapp
+# Edit: listen port, backend/root
 
-# Include it in routing.conf (see example in routing.conf)
+# Enable
+sudo ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 3. Routing Server
+
+```bash
+# Gatekeeper routing
+sudo cp routing-gatekeeper.conf /etc/nginx/sites-available/auth.example.com
+sudo nano /etc/nginx/sites-available/auth.example.com
+# Edit: server_name, gatekeeper server IP:port
+
+# Protected app routing
+sudo cp routing-protected-app.conf /etc/nginx/sites-available/docs.example.com
+sudo nano /etc/nginx/sites-available/docs.example.com
+# Edit: server_name, app_slug, server IPs, gatekeeper_url
+
+# Enable
+sudo ln -s /etc/nginx/sites-available/auth.example.com /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/docs.example.com /etc/nginx/sites-enabled/
+
+# Test (must pass before certbot)
 sudo nginx -t && sudo systemctl reload nginx
 
-# Register in Gatekeeper
+# SSL (after nginx -t passes)
+sudo certbot --nginx -d auth.example.com -d docs.example.com
+```
+
+### 4. Register App in Gatekeeper
+
+```bash
 uv run gk apps add --slug docs --name "Documentation"
-uv run gk apps grant --slug docs --email admin@example.com
+uv run gk apps grant --slug docs --email user@example.com
 ```
 
-## Auth Flow Explained
+## Auth Flow
 
-### Happy Path (Authenticated User with Access)
+1. User visits `http://docs.example.com/page`
+2. Routing server: `auth_request` → `http://10.0.0.10:8000/api/v1/auth/validate`
+3. Gatekeeper checks session:
+   - **401** → redirect to `http://auth.example.com/signin?redirect=...`
+   - **403** → redirect to `http://auth.example.com/request-access?app=docs`
+   - **200** → proxy to `http://10.0.0.20:3000` with `X-Auth-User` header
 
-```
-1. GET https://docs.example.com/api/data
-2. Nginx: auth_request → http://127.0.0.1:8000/api/v1/auth/validate
-   Headers: X-GK-App: docs, Cookie: session=xxx
-3. Gatekeeper: validates session, checks app access → 200 OK
-   Response headers: X-Auth-User: user@example.com
-4. Nginx: proxy_pass to app backend with X-Auth-User header
-5. App receives request with authenticated user info
-```
-
-### Unauthenticated User
-
-```
-1. GET https://docs.example.com/page
-2. Nginx: auth_request → Gatekeeper
-3. Gatekeeper: no valid session → 401 Unauthorized
-4. Nginx: error_page 401 → redirect to:
-   https://auth.example.com/signin?redirect=https://docs.example.com/page
-5. User logs in at Gatekeeper (cookie set on .example.com domain)
-6. Gatekeeper redirects to original URL
-7. Now auth_request returns 200 → user sees page
-```
-
-### Authenticated but No App Access
-
-```
-1. GET https://docs.example.com/page
-2. Nginx: auth_request → Gatekeeper
-3. Gatekeeper: valid session but no 'docs' access → 403 Forbidden
-4. Nginx: error_page 403 → redirect to:
-   https://auth.example.com/request-access?app=docs
-   (or show inline "Access Denied" message)
-```
-
-## Cookie Domain for SSO
+## Cookie Domain
 
 For SSO across subdomains, set in Gatekeeper's `.env`:
 
-```bash
+```
 COOKIE_DOMAIN=.example.com
 ```
-
-This makes the session cookie work across `auth.example.com`, `docs.example.com`, etc.
-
-## Auth Caching (Optional)
-
-For high-traffic apps, cache auth responses:
-
-1. Add to `/etc/nginx/nginx.conf` in `http {}`:
-   ```nginx
-   proxy_cache_path /var/cache/nginx/gatekeeper
-                    levels=1:2
-                    keys_zone=gatekeeper_auth:1m
-                    max_size=10m
-                    inactive=5m;
-   ```
-
-2. Uncomment cache lines in `protected-app.conf`
-
-## Troubleshooting
-
-### "Too many redirects"
-- Check `COOKIE_DOMAIN` matches your domain structure
-- Ensure Gatekeeper itself (auth.example.com) has NO auth_request
-
-### "401 on login page"
-- Gatekeeper must be publicly accessible without auth_request
-- Check gatekeeper.conf doesn't have auth_request directives
-
-### "Cookie not sent"
-- Check browser dev tools → cookies
-- Verify `COOKIE_DOMAIN` is set correctly (needs leading dot: `.example.com`)
-- Ensure HTTPS is used (cookies may be Secure)
-
-### Auth validation slow
-- Enable auth caching (see above)
-- Check Gatekeeper logs for slow queries
