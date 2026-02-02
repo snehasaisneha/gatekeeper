@@ -662,7 +662,7 @@ async def passkey_signin_verify(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid credential format.",
-        )
+        ) from None
 
     challenge = _passkey_challenges.pop(challenge_from_client, None)
     if not challenge:
@@ -730,7 +730,7 @@ async def delete_passkey(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid passkey ID format. Must be a valid UUID.",
-        )
+        ) from None
 
     passkey_service = PasskeyService(db)
     deleted = await passkey_service.delete_passkey(pk_uuid, current_user.id)

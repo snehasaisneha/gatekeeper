@@ -1,5 +1,6 @@
 """User management CLI commands."""
 
+import contextlib
 from enum import Enum
 from typing import Annotated
 
@@ -162,10 +163,8 @@ async def approve(
             # Send emails
             email_service = EmailService(db=db)
             for u in users:
-                try:
+                with contextlib.suppress(Exception):
                     await email_service.send_registration_approved(u.email)
-                except Exception:
-                    pass  # Best effort
 
             console.print(f"[green]\u2713[/green] Approved {len(users)} user(s).")
         else:

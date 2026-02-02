@@ -6,6 +6,6 @@ from gatekeeper.services.session import SessionService
 __all__ = [
     "EmailService",
     "OTPService",
-    "SessionService",
     "PasskeyService",
+    "SessionService",
 ]

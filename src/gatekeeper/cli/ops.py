@@ -50,8 +50,8 @@ async def test_email(
                 err_console.print("[red]\u2717[/red] Failed to send test email")
                 raise typer.Exit(code=1)
         except Exception as e:
-            err_console.print(f"[red]\u2717[/red] Failed to send email: {e}")
-            raise typer.Exit(code=1)
+            err_console.print(f"[red]✗[/red] Failed to send email: {e}")
+            raise typer.Exit(code=1) from None
 
 
 @app.command()

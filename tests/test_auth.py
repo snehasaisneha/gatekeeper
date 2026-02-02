@@ -240,7 +240,7 @@ class TestOTPAttempts:
         )
 
         # Make 5 failed attempts with wrong code
-        for i in range(5):
+        for _ in range(5):
             response = await client.post(
                 "/api/v1/auth/signin/verify",
                 json={"email": email, "code": "000000"},

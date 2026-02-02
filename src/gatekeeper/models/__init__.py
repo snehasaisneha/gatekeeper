@@ -6,14 +6,14 @@ from gatekeeper.models.session import Session
 from gatekeeper.models.user import User, UserStatus
 
 __all__ = [
-    "App",
-    "UserAppAccess",
-    "User",
-    "UserStatus",
-    "Session",
     "OTP",
+    "App",
+    "EmailSuppression",
     "OTPPurpose",
     "PasskeyCredential",
-    "EmailSuppression",
+    "Session",
     "SuppressionReason",
+    "User",
+    "UserAppAccess",
+    "UserStatus",
 ]
