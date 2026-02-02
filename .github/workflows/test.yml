@@ -23,25 +23,25 @@ jobs:
   pytest:
     name: Pytest
     runs-on: ubuntu-latest
+    env:
+      GATEKEEPER_SECRET_KEY: test-secret-key-for-ci
+      GATEKEEPER_DATABASE_URL: sqlite+aiosqlite:///./test.db
+      GATEKEEPER_RP_ID: localhost
+      GATEKEEPER_RP_NAME: Test
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version-file: ".python-version"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
         run: uv sync --frozen
 
       - name: Run tests
         run: uv run pytest --tb=short -v
-        env:
-          GATEKEEPER_SECRET_KEY: test-secret-key-for-ci
-          GATEKEEPER_DATABASE_URL: sqlite+aiosqlite:///./test.db
-          GATEKEEPER_RP_ID: localhost
-          GATEKEEPER_RP_NAME: Test

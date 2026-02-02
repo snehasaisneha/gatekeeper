@@ -21,27 +21,32 @@ jobs:
   app-boot:
     name: App Boot
     runs-on: ubuntu-latest
+    env:
+      GATEKEEPER_SECRET_KEY: test-secret-key-for-ci
+      GATEKEEPER_DATABASE_URL: sqlite+aiosqlite:///./test.db
+      GATEKEEPER_RP_ID: localhost
+      GATEKEEPER_RP_NAME: Test
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version-file: ".python-version"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
         run: uv sync --frozen
 
       - name: Verify CLI loads
-        run: uv run gatekeeper --help
+        run: uv run gk --help
 
       - name: Start server and check health
         run: |
-          uv run gatekeeper serve &
+          uv run gk ops serve &
           SERVER_PID=$!
           sleep 5
 
@@ -50,37 +55,32 @@ jobs:
 
           # Cleanup
           kill $SERVER_PID
-        env:
-          GATEKEEPER_SECRET_KEY: test-secret-key-for-ci
-          GATEKEEPER_DATABASE_URL: sqlite+aiosqlite:///./test.db
-          GATEKEEPER_RP_ID: localhost
-          GATEKEEPER_RP_NAME: Test
 
   cli-commands:
     name: CLI Commands
     runs-on: ubuntu-latest
+    env:
+      GATEKEEPER_SECRET_KEY: test-secret-key-for-ci
+      GATEKEEPER_DATABASE_URL: sqlite+aiosqlite:///./test.db
+      GATEKEEPER_RP_ID: localhost
+      GATEKEEPER_RP_NAME: Test
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version-file: ".python-version"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
         run: uv sync --frozen
 
       - name: Verify CLI subcommands
         run: |
-          uv run gatekeeper db --help
-          uv run gatekeeper user --help
-          uv run gatekeeper app --help
-        env:
-          GATEKEEPER_SECRET_KEY: test-secret-key-for-ci
-          GATEKEEPER_DATABASE_URL: sqlite+aiosqlite:///./test.db
-          GATEKEEPER_RP_ID: localhost
-          GATEKEEPER_RP_NAME: Test
+          uv run gk db --help
+          uv run gk user --help
+          uv run gk app --help
