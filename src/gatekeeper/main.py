@@ -6,10 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from gatekeeper.api.v1.router import router as v1_router
 from gatekeeper.config import get_settings
 from gatekeeper.database import init_db
+from gatekeeper.rate_limit import limiter
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -40,6 +43,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(v1_router, prefix="/api/v1")
 

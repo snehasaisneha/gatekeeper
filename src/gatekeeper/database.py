@@ -25,10 +25,17 @@ async_session_maker = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    from fastapi import HTTPException
+
     async with async_session_maker() as session:
         try:
             yield session
             await session.commit()
+        except HTTPException:
+            # HTTPException is a normal response flow, still commit
+            # This ensures OTP attempts are tracked even on failed verifications
+            await session.commit()
+            raise
         except Exception:
             await session.rollback()
             raise

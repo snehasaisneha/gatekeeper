@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.config import Settings, get_settings
-from gatekeeper.models.otp import OTP, OTPPurpose
+from gatekeeper.models.otp import MAX_OTP_ATTEMPTS, OTP, OTPPurpose
 from gatekeeper.services.email import EmailService
 
 
@@ -40,14 +40,22 @@ class OTPService:
         purpose_text = "sign in" if purpose == OTPPurpose.SIGNIN else "register"
         return await self.email_service.send_otp(email, code, purpose_text)
 
-    async def verify(self, email: str, code: str, purpose: OTPPurpose) -> bool:
+    async def verify(self, email: str, code: str, purpose: OTPPurpose) -> tuple[bool, str | None]:
+        """
+        Verify an OTP code.
+
+        Returns:
+            tuple: (success, error_message)
+            - (True, None) on success
+            - (False, "error message") on failure
+        """
         email = email.lower()
 
+        # Find the most recent unused, unexpired OTP for this email/purpose
         stmt = (
             select(OTP)
             .where(
                 OTP.email == email,
-                OTP.code == code,
                 OTP.purpose == purpose,
                 OTP.used == False,  # noqa: E712
                 OTP.expires_at > datetime.now(timezone.utc),
@@ -59,11 +67,25 @@ class OTPService:
         otp = result.scalar_one_or_none()
 
         if not otp:
-            return False
+            return False, "Invalid or expired code. Please request a new one."
 
+        # Check if max attempts exceeded
+        if otp.attempts >= MAX_OTP_ATTEMPTS:
+            return False, "Too many failed attempts. Please request a new code."
+
+        # Check if code matches
+        if otp.code != code:
+            otp.attempts += 1
+            await self.db.flush()
+            remaining = MAX_OTP_ATTEMPTS - otp.attempts
+            if remaining <= 0:
+                return False, "Too many failed attempts. Please request a new code."
+            return False, f"Invalid code. {remaining} attempt(s) remaining."
+
+        # Success - mark as used
         otp.used = True
         await self.db.flush()
-        return True
+        return True, None
 
     async def _invalidate_previous(self, email: str, purpose: OTPPurpose) -> None:
         stmt = select(OTP).where(

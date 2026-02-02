@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Auth Config
     accepted_domains: str = ""
-    otp_expiry_minutes: int = 10
+    otp_expiry_minutes: int = 5
     session_expiry_days: int = 30
     cookie_domain: str | None = None  # e.g., "example.com" for production
 

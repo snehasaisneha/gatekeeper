@@ -8,6 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from gatekeeper.database import Base
 
 
+MAX_OTP_ATTEMPTS = 5
+
+
 class OTPPurpose(str, enum.Enum):
     SIGNIN = "signin"
     REGISTER = "register"
@@ -24,6 +27,7 @@ class OTP(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
     used: Mapped[bool] = mapped_column(default=False, nullable=False)
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), nullable=False
     )
@@ -37,4 +41,8 @@ class OTP(Base):
 
     @property
     def is_valid(self) -> bool:
-        return not self.used and not self.is_expired
+        return not self.used and not self.is_expired and self.attempts < MAX_OTP_ATTEMPTS
+
+    @property
+    def has_attempts_remaining(self) -> bool:
+        return self.attempts < MAX_OTP_ATTEMPTS

@@ -3,11 +3,12 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Path, Response, status
+from fastapi import APIRouter, HTTPException, Path, Request, Response, status
 from sqlalchemy import select
 
 from gatekeeper.api.deps import CurrentUser, DbSession
 from gatekeeper.config import get_settings
+from gatekeeper.rate_limit import limiter
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.schemas.auth import (
@@ -59,12 +60,14 @@ def clear_session_cookie(response: Response) -> None:
     responses={
         200: {"description": "OTP sent successfully"},
         400: {"model": ErrorResponse, "description": "Email already registered"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Start registration",
     description="Send an OTP to the provided email address to start registration.",
 )
-async def register(request: OTPRequest, db: DbSession) -> MessageResponse:
-    email = request.email.lower()
+@limiter.limit("3/hour")
+async def register(request: Request, data: OTPRequest, db: DbSession) -> MessageResponse:
+    email = data.email.lower()
 
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
@@ -108,22 +111,26 @@ async def register(request: OTPRequest, db: DbSession) -> MessageResponse:
     responses={
         200: {"description": "Registration successful"},
         400: {"model": ErrorResponse, "description": "Invalid or expired OTP"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Complete registration",
     description="Verify the OTP and complete registration. Auto-approves if email domain is in accepted domains.",
 )
+@limiter.limit("5/15minutes")
 async def register_verify(
-    request: OTPVerifyRequest,
+    request: Request,
+    data: OTPVerifyRequest,
     response: Response,
     db: DbSession,
 ) -> AuthResponse:
-    email = request.email.lower()
+    email = data.email.lower()
 
     otp_service = OTPService(db)
-    if not await otp_service.verify(email, request.code, OTPPurpose.REGISTER):
+    success, error_message = await otp_service.verify(email, data.code, OTPPurpose.REGISTER)
+    if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification code.",
+            detail=error_message or "Invalid or expired verification code.",
         )
 
     stmt = select(User).where(User.email == email)
@@ -182,12 +189,14 @@ async def register_verify(
     responses={
         200: {"description": "OTP sent successfully"},
         400: {"model": ErrorResponse, "description": "User not found or not approved"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Start sign-in",
     description="Send an OTP to the provided email address to start sign-in.",
 )
-async def signin(request: OTPRequest, db: DbSession) -> MessageResponse:
-    email = request.email.lower()
+@limiter.limit("5/15minutes")
+async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageResponse:
+    email = data.email.lower()
 
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
@@ -232,16 +241,19 @@ async def signin(request: OTPRequest, db: DbSession) -> MessageResponse:
     responses={
         200: {"description": "Sign-in successful"},
         400: {"model": ErrorResponse, "description": "Invalid or expired OTP"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Complete sign-in",
     description="Verify the OTP and complete sign-in.",
 )
+@limiter.limit("5/15minutes")
 async def signin_verify(
-    request: OTPVerifyRequest,
+    request: Request,
+    data: OTPVerifyRequest,
     response: Response,
     db: DbSession,
 ) -> AuthResponse:
-    email = request.email.lower()
+    email = data.email.lower()
 
     stmt = select(User).where(User.email == email, User.status == UserStatus.APPROVED)
     result = await db.execute(stmt)
@@ -254,10 +266,11 @@ async def signin_verify(
         )
 
     otp_service = OTPService(db)
-    if not await otp_service.verify(email, request.code, OTPPurpose.SIGNIN):
+    success, error_message = await otp_service.verify(email, data.code, OTPPurpose.SIGNIN)
+    if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification code.",
+            detail=error_message or "Invalid or expired verification code.",
         )
 
     session_service = SessionService(db)
@@ -399,15 +412,20 @@ async def passkey_register_verify(
 @router.post(
     "/passkey/signin/options",
     response_model=dict[str, Any],
+    responses={
+        429: {"model": ErrorResponse, "description": "Too many requests"},
+    },
     summary="Get passkey sign-in options",
     description="Get WebAuthn options for signing in with a passkey.",
 )
+@limiter.limit("10/15minutes")
 async def passkey_signin_options(
-    request: PasskeyOptionsRequest,
+    request: Request,
+    data: PasskeyOptionsRequest,
     db: DbSession,
 ) -> dict[str, Any]:
     passkey_service = PasskeyService(db)
-    options, challenge = await passkey_service.generate_authentication_options(request.email)
+    options, challenge = await passkey_service.generate_authentication_options(data.email)
 
     challenge_key = options["challenge"]
     _passkey_challenges[challenge_key] = challenge
