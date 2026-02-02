@@ -24,7 +24,8 @@ export function PasskeyButton({ email, onSuccess, onError, className }: PasskeyB
       await api.auth.passkeySigninVerify(credential);
 
       onSuccess?.();
-      window.location.href = '/';
+      const params = new URLSearchParams(window.location.search);
+      window.location.href = params.get('redirect') || '/';
     } catch (err) {
       if (err instanceof ApiError) {
         onError?.(err.message);

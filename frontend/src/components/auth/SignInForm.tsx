@@ -46,7 +46,8 @@ export function SignInForm() {
 
     try {
       await api.auth.signinVerify(email, code);
-      window.location.href = '/';
+      const params = new URLSearchParams(window.location.search);
+      window.location.href = params.get('redirect') || '/';
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

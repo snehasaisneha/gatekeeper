@@ -49,7 +49,8 @@ export function RegisterForm() {
       if (response.user) {
         setStep('success');
         setTimeout(() => {
-          window.location.href = '/';
+          const params = new URLSearchParams(window.location.search);
+          window.location.href = params.get('redirect') || '/';
         }, 2000);
       } else {
         setStep('pending');
