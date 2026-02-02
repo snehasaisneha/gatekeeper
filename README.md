@@ -1,321 +1,129 @@
 # Gatekeeper
 
-A lightweight, self-hosted authentication gateway for internal tools. Supports email OTP and WebAuthn passkeys.
+Lightweight, self-hosted auth gateway for internal tools. Email OTP + Passkeys. Multi-app SSO. Protect any app behind nginx. No vendor lock-in, no per-user pricing, full data control.
+
+## Why Gatekeeper?
+
+You have internal tools — docs, dashboards, Jupyter notebooks, admin panels. You need auth, but:
+
+- **Auth0/Okta** = $23+/user/month, your data on their servers
+- **Keycloak** = 512MB+ RAM, days of setup, enterprise complexity
+- **Cloudflare Access** = traffic through their network, vendor lock-in
+- **Basic auth** = unhashed passwords, no audit trail, security theater
+
+Gatekeeper: single SQLite file, ~50MB RAM, deploys in 15 minutes. Sits in front of nginx, protects anything behind it.
 
 ## Features
 
-- Email-based OTP authentication
-- WebAuthn/Passkey support for passwordless login
-- Admin panel for user management
-- Auto-approval for configured email domains
-- SES and SMTP email support
-- SQLite (default) or PostgreSQL database
-- Email bounce/complaint handling for SES compliance
-
-## Requirements
-
-- Python 3.12+
-- Node.js 22+ (for frontend)
-- uv 0.9+ (Python package manager)
+- **Email OTP + Passkeys** — No passwords to manage or leak
+- **Multi-app SSO** — One login for all your internal tools (`*.company.com`)
+- **Role-based access** — Control who accesses what, with optional role hints
+- **Admin panel** — Approve registrations, manage users and apps
+- **CLI tools** — `gk users`, `gk apps`, `gk ops` for headless management
+- **SQLite or PostgreSQL** — Zero-config default, scales when needed
+- **SES or SMTP** — Bring your own email provider
 
 ## Quick Start
 
-### 1. Clone and setup environment
-
 ```bash
-# Copy environment file
-cp .env.example .env
+# Clone and configure
+git clone <repo> && cd gatekeeper
+cp .env.example .env  # Edit with your settings
 
-# Edit .env with your settings
-# Important: Change SECRET_KEY for production
-```
-
-### 2. Install backend dependencies
-
-```bash
+# Install and run
 uv sync
-```
-
-### 3. Set up the database
-
-```bash
 uv run all-migrations
-```
-
-This creates the SQLite database and applies all migrations.
-
-### 4. Seed the admin user
-
-```bash
-uv run seed-admin admin@yourdomain.com
-```
-
-### 5. Run the backend
-
-```bash
+uv run gk users add --email admin@example.com --admin --seeded
 uv run gatekeeper
 ```
 
-The API will be available at `http://localhost:8000`
-API docs at `http://localhost:8000/api/v1/docs`
+Frontend: `cd frontend && npm install && npm run dev`
 
-### 6. Install and run frontend
+**That's it.** API at `:8000`, frontend at `:4321`.
+
+## Protecting Apps
+
+1. Register an app in Gatekeeper:
+   ```bash
+   uv run gk apps add --slug docs --name "Documentation"
+   uv run gk apps grant --slug docs --email user@example.com
+   ```
+
+2. Configure nginx to validate requests:
+   ```nginx
+   location / {
+       auth_request /_gatekeeper/validate;
+       proxy_set_header X-Auth-User $auth_user;
+       proxy_pass http://your-app:3000;
+   }
+   ```
+
+See [`deployment/`](deployment/) for complete nginx configs.
+
+## CLI
 
 ```bash
-cd frontend
-cp .env.example .env  # Edit PUBLIC_APP_NAME if needed
-npm install
-npm run dev
-```
+# User management
+uv run gk users add --email user@example.com
+uv run gk users list
+uv run gk users approve --email user@example.com
 
-The frontend will be available at `http://localhost:4321`
+# App management
+uv run gk apps add --slug grafana --name "Grafana"
+uv run gk apps grant --slug grafana --email user@example.com --role admin
+uv run gk apps list
+
+# Operations
+uv run gk ops test-email --to you@example.com
+uv run gk ops healthcheck
+```
 
 ## Configuration
 
-### Backend Environment Variables
+Key environment variables (see `.env.example` for all):
 
-| Variable           | Description                               | Default                             |
-| ------------------ | ----------------------------------------- | ----------------------------------- |
-| `APP_NAME`         | Application name (used in emails)         | Gatekeeper                          |
-| `SECRET_KEY`       | Secret key for signing (min 32 chars)     | -                                   |
-| `DATABASE_URL`     | Database connection string                | sqlite+aiosqlite:///./gatekeeper.db |
-| `ACCEPTED_DOMAINS` | Comma-separated domains for auto-approval | -                                   |
-| `EMAIL_PROVIDER`   | `ses` or `smtp`                           | ses                                 |
-| `EMAIL_FROM_NAME`  | Sender display name in emails             | Gatekeeper                          |
-| `WEBAUTHN_RP_ID`   | WebAuthn relying party ID                 | localhost                           |
-| `WEBAUTHN_ORIGIN`  | Frontend origin for WebAuthn              | http://localhost:4321               |
-
-See `.env.example` for all options.
-
-### Frontend Environment Variables
-
-| Variable          | Description                  | Default    |
-| ----------------- | ---------------------------- | ---------- |
-| `PUBLIC_APP_NAME` | Application name shown in UI | Gatekeeper |
-
-See `frontend/.env.example`.
+| Variable | Description |
+|----------|-------------|
+| `SECRET_KEY` | Signing key (min 32 chars) |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./gatekeeper.db` or PostgreSQL |
+| `ACCEPTED_DOMAINS` | Auto-approve emails from these domains |
+| `EMAIL_PROVIDER` | `ses` or `smtp` |
+| `COOKIE_DOMAIN` | `.example.com` for multi-app SSO |
+| `WEBAUTHN_RP_ID` | Domain for passkey registration |
 
 ## Production Deployment
 
-### Architecture
-
-```
-┌─────────────────────┐     ┌─────────────────────────────────────┐
-│   Routing Server    │     │          Docs Server                │
-│   (Public IP)       │     │       (Private IP)                  │
-│                     │     │                                     │
-│   nginx (SSL)       │────▶│   nginx                             │
-│                     │     │   ├─ :8080 → API (:8000)            │
-│   certbot           │     │   ├─ :4321 → Frontend (static)      │
-│                     │     │   └─ :3000 → Docs (auth protected)  │
-└─────────────────────┘     │                                     │
-                            │   gatekeeper (systemd)              │
-                            │   docs (static files)               │
-                            └─────────────────────────────────────┘
-```
-
-### 1. Set up Docs Server
-
 ```bash
-# Install dependencies
-sudo apt update
-sudo apt install -y nginx
-
-# Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install Node.js 22
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
-source ~/.bashrc
-nvm install 22
-nvm use 22
-
-# Clone and setup
-cd ~/deploy
-git clone <repo-url> gatekeeper
-cd gatekeeper
-
-# Setup environment
-cp .env.example .env
-# Edit .env with production values:
-#   - APP_URL=https://yourdomain.com
-#   - FRONTEND_URL=https://yourdomain.com
-#   - WEBAUTHN_RP_ID=yourdomain.com
-#   - WEBAUTHN_ORIGIN=https://yourdomain.com
-#   - SERVER_RELOAD=false
-#   - Configure email settings
-
-# Run migrations and seed admin
+# On your server
 uv run all-migrations
-uv run seed-admin admin@yourdomain.com
+uv run gk users add --email admin@example.com --admin --seeded
 
-# Build frontend
-cd frontend
-cp .env.example .env
-echo 'PUBLIC_APP_NAME="Your App Name"' > .env
-npm install
-npm run build
+# Systemd
+sudo cp deployment/systemd/gatekeeper.service /etc/systemd/system/
+sudo systemctl enable --now gatekeeper
 
-# Setup systemd service
-sudo cp ~/deploy/gatekeeper/deployment/systemd/gatekeeper.service /etc/systemd/system/
-# Edit the service file with your paths
-sudo systemctl daemon-reload
-sudo systemctl enable gatekeeper
-sudo systemctl start gatekeeper
-
-# Setup nginx
-sudo cp ~/deploy/gatekeeper/deployment/nginx/gatekeeper.conf /etc/nginx/sites-available/gatekeeper
-# Edit the file: change variables at top
-sudo ln -s /etc/nginx/sites-available/gatekeeper /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-
-# Fix permissions for www-data
-chmod 755 /home/ubuntu
-chmod -R 755 /home/ubuntu/deploy
+# Nginx
+sudo cp deployment/nginx/gatekeeper.conf /etc/nginx/sites-available/
+sudo certbot --nginx -d auth.example.com
 ```
 
-### 2. Set up Routing Server
+See [`deployment/README.md`](deployment/README.md) for full guide.
 
-```bash
-# Install nginx and certbot
-sudo apt update
-sudo apt install -y nginx certbot python3-certbot-nginx
+## Who This Is For
 
-# Setup nginx config (see deployment/nginx/README.md for details)
-# Edit the file: replace variables at top
-sudo ln -s /etc/nginx/sites-available/yourdomain.com /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+**Good fit:**
+- Small to medium teams (5–100 users)
+- 3–10 internal tools needing protection
+- Self-hosted requirement (data residency, compliance)
+- No existing IdP, or want independence from it
 
-# Get SSL certificate
-sudo certbot --nginx -d yourdomain.com
-```
-
-### 3. Firewall/Security Groups
-
-**Routing Server (public):**
-
-- Allow inbound: 80, 443 (from anywhere)
-- Allow outbound: all to docs server private IP
-
-**Docs Server (private):**
-
-- Allow inbound: 8080, 4321, 3000 (from routing server only)
-- No public access
-
-### Database Reset
-
-To completely reset the database:
-
-```bash
-sudo systemctl stop gatekeeper
-rm ~/deploy/gatekeeper/gatekeeper.db
-cd ~/deploy/gatekeeper
-uv run all-migrations
-uv run seed-admin admin@yourdomain.com
-sudo systemctl start gatekeeper
-```
-
-## Development
-
-### Local email testing
-
-For local development, use [Mailhog](https://github.com/mailhog/MailHog):
-
-```bash
-docker run -p 1025:1025 -p 8025:8025 mailhog/mailhog
-```
-
-Then configure SMTP in `.env`:
-
-```
-EMAIL_PROVIDER=smtp
-SMTP_HOST=localhost
-SMTP_PORT=1025
-```
-
-View emails at `http://localhost:8025`
-
-### Database
-
-SQLite is used by default. Migrations are simple SQL files in `src/gatekeeper/db/migrations/`.
-
-#### Running migrations
-
-```bash
-# Apply all pending migrations
-uv run all-migrations
-
-# Run a specific migration (e.g., migration #3)
-uv run migrations --n 3
-```
-
-#### Creating new migrations
-
-Add a new SQL file in `src/gatekeeper/db/migrations/` with the naming convention:
-
-- `001_init.sql`
-- `002_add_feature.sql`
-- etc.
-
-Migrations run in alphabetical order and are tracked in the `_migrations` table.
-
-#### PostgreSQL
-
-For PostgreSQL, change the database URL:
-
-```
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost/gatekeeper
-```
-
-The migration runner supports both SQLite and PostgreSQL. Just change the `DATABASE_URL` and run migrations:
-```bash
-uv run all-migrations
-```
-
-## API Endpoints
-
-### Authentication (`/api/v1/auth/`)
-
-- `POST /register` - Start registration (sends OTP)
-- `POST /register/verify` - Complete registration
-- `POST /signin` - Start sign-in (sends OTP)
-- `POST /signin/verify` - Complete sign-in
-- `POST /signout` - Sign out
-- `GET /me` - Get current user
-- `DELETE /me` - Delete own account
-- `GET /passkeys` - List registered passkeys
-- `DELETE /passkeys/{id}` - Delete a passkey
-- `POST /passkey/register/options` - Get passkey registration options
-- `POST /passkey/register/verify` - Complete passkey registration
-- `POST /passkey/signin/options` - Get passkey sign-in options
-- `POST /passkey/signin/verify` - Complete passkey sign-in
-
-### Admin (`/api/v1/admin/`)
-
-All endpoints require admin authentication.
-
-- `GET /users` - List all users
-- `GET /users/pending` - List pending registrations
-- `POST /users` - Create user (sends invitation email)
-- `PATCH /users/{id}` - Update user
-- `POST /users/{id}/approve` - Approve registration
-- `POST /users/{id}/reject` - Reject registration
-- `DELETE /users/{id}` - Delete user
-
-## Pages
-
-| Path        | Description                                 | Auth Required    |
-| ----------- | ------------------------------------------- | ---------------- |
-| `/signin`   | Sign in page                                | No               |
-| `/register` | Registration page                           | No               |
-| `/account`  | Account settings (passkeys, delete account) | Yes              |
-| `/admin`    | Admin panel                                 | Yes (admin only) |
-| `/`         | Protected docs                              | Yes              |
+**Not a fit:**
+- Enterprise scale (1000+ users, complex RBAC hierarchies)
+- Multi-tenant SaaS (customer-facing auth)
+- Existing Google Workspace/Okta SSO you want to use
 
 ## License
 
 AGPL-3.0-or-later
 
-AGPL means you're free to use, modify, and deploy Gatekeeper internally with no obligations. The source-sharing requirement only applies if you offer a modified version as a public-facing service.
+Use, modify, and deploy internally with no obligations. Source-sharing only required if you offer a modified version as a public service.
