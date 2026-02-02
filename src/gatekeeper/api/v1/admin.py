@@ -1,9 +1,8 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
-
-from datetime import datetime, timezone
 
 from gatekeeper.api.deps import AdminUser, DbSession
 from gatekeeper.models.app import AccessRequestStatus, App, AppAccessRequest, UserAppAccess
@@ -73,11 +72,7 @@ async def list_pending_users(admin: AdminUser, db: DbSession) -> PendingUserList
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    stmt = (
-        select(User)
-        .where(User.status == UserStatus.PENDING)
-        .order_by(User.created_at.asc())
-    )
+    stmt = select(User).where(User.status == UserStatus.PENDING).order_by(User.created_at.asc())
     result = await db.execute(stmt)
     users = result.scalars().all()
 
@@ -338,7 +333,9 @@ async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
     apps = result.scalars().all()
 
     return AppList(
-        apps=[AppRead(id=str(a.id), slug=a.slug, name=a.name, created_at=a.created_at) for a in apps],
+        apps=[
+            AppRead(id=str(a.id), slug=a.slug, name=a.name, created_at=a.created_at) for a in apps
+        ],
         total=total,
     )
 
@@ -664,9 +661,7 @@ async def list_access_requests(
         requests_stmt = requests_stmt.where(AppAccessRequest.status == status_filter)
     else:
         # By default, show pending requests
-        requests_stmt = requests_stmt.where(
-            AppAccessRequest.status == AccessRequestStatus.PENDING
-        )
+        requests_stmt = requests_stmt.where(AppAccessRequest.status == AccessRequestStatus.PENDING)
 
     requests_stmt = requests_stmt.order_by(AppAccessRequest.created_at.asc())
     result = await db.execute(requests_stmt)
@@ -719,11 +714,13 @@ async def approve_access_request(
         )
 
     # Find request
-    req_stmt = select(AppAccessRequest, User).join(
-        User, AppAccessRequest.user_id == User.id
-    ).where(
-        AppAccessRequest.id == request_id,
-        AppAccessRequest.app_id == app.id,
+    req_stmt = (
+        select(AppAccessRequest, User)
+        .join(User, AppAccessRequest.user_id == User.id)
+        .where(
+            AppAccessRequest.id == request_id,
+            AppAccessRequest.app_id == app.id,
+        )
     )
     req_result = await db.execute(req_stmt)
     row = req_result.one_or_none()
@@ -745,7 +742,7 @@ async def approve_access_request(
     # Update request status
     access_request.status = AccessRequestStatus.APPROVED
     access_request.reviewed_by = admin.email
-    access_request.reviewed_at = datetime.now(timezone.utc)
+    access_request.reviewed_at = datetime.now(UTC)
 
     # Grant access
     role = data.role if data else None
@@ -759,9 +756,7 @@ async def approve_access_request(
     await db.flush()
 
     role_msg = f" with role '{role}'" if role else ""
-    return MessageResponse(
-        message=f"Approved access to '{slug}' for '{user.email}'{role_msg}"
-    )
+    return MessageResponse(message=f"Approved access to '{slug}' for '{user.email}'{role_msg}")
 
 
 @router.post(
@@ -793,11 +788,13 @@ async def reject_access_request(
         )
 
     # Find request
-    req_stmt = select(AppAccessRequest, User).join(
-        User, AppAccessRequest.user_id == User.id
-    ).where(
-        AppAccessRequest.id == request_id,
-        AppAccessRequest.app_id == app.id,
+    req_stmt = (
+        select(AppAccessRequest, User)
+        .join(User, AppAccessRequest.user_id == User.id)
+        .where(
+            AppAccessRequest.id == request_id,
+            AppAccessRequest.app_id == app.id,
+        )
     )
     req_result = await db.execute(req_stmt)
     row = req_result.one_or_none()
@@ -819,7 +816,7 @@ async def reject_access_request(
     # Update request status
     access_request.status = AccessRequestStatus.REJECTED
     access_request.reviewed_by = admin.email
-    access_request.reviewed_at = datetime.now(timezone.utc)
+    access_request.reviewed_at = datetime.now(UTC)
     await db.flush()
 
     return MessageResponse(message=f"Rejected access request from '{user.email}' for '{slug}'")

@@ -1,6 +1,6 @@
-import hmac
-import hashlib
 import base64
+import hashlib
+import hmac
 
 from gatekeeper.config import get_settings
 

@@ -53,7 +53,9 @@ class RevokeAccess(BaseModel):
 
 
 class AccessRequestCreate(BaseModel):
-    message: str | None = Field(None, max_length=500, description="Optional message explaining why access is needed")
+    message: str | None = Field(
+        None, max_length=500, description="Optional message explaining why access is needed"
+    )
 
 
 class AccessRequestRead(BaseModel):

@@ -34,11 +34,7 @@ class AdminUpdateUser(BaseModel):
     )
     is_admin: bool | None = Field(default=None, description="Set admin privileges")
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {"status": "approved", "is_admin": False}
-        }
-    }
+    model_config = {"json_schema_extra": {"example": {"status": "approved", "is_admin": False}}}
 
 
 class UserList(BaseModel):

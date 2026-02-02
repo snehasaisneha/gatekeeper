@@ -12,11 +12,7 @@ class OTPRequest(BaseModel):
 
     email: EmailStr = Field(..., description="Email address to send OTP to")
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {"email": "user@example.com"}
-        }
-    }
+    model_config = {"json_schema_extra": {"example": {"email": "user@example.com"}}}
 
 
 class OTPVerifyRequest(BaseModel):
@@ -32,9 +28,7 @@ class OTPVerifyRequest(BaseModel):
     )
 
     model_config = {
-        "json_schema_extra": {
-            "example": {"email": "user@example.com", "code": "123456"}
-        }
+        "json_schema_extra": {"example": {"email": "user@example.com", "code": "123456"}}
     }
 
 
@@ -46,11 +40,7 @@ class PasskeyOptionsRequest(BaseModel):
         description="Optional email to filter allowed credentials for this user",
     )
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {"email": "user@example.com"}
-        }
-    }
+    model_config = {"json_schema_extra": {"example": {"email": "user@example.com"}}}
 
 
 class WebAuthnCredentialResponse(BaseModel):
@@ -148,11 +138,7 @@ class ProfileUpdateRequest(BaseModel):
 
     name: str | None = Field(None, max_length=255, description="User's display name")
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {"name": "John Doe"}
-        }
-    }
+    model_config = {"json_schema_extra": {"example": {"name": "John Doe"}}}
 
 
 class AuthResponse(BaseModel):
@@ -202,11 +188,7 @@ class ErrorResponse(BaseModel):
 
     detail: str = Field(..., description="Error message describing what went wrong")
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {"detail": "Invalid or expired OTP"}
-        }
-    }
+    model_config = {"json_schema_extra": {"example": {"detail": "Invalid or expired OTP"}}}
 
 
 class PasskeyInfo(BaseModel):

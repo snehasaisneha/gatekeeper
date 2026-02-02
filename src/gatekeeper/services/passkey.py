@@ -33,8 +33,7 @@ class PasskeyService:
         existing_credentials = await self._get_user_credentials(user.id)
 
         exclude_credentials = [
-            PublicKeyCredentialDescriptor(id=cred.credential_id)
-            for cred in existing_credentials
+            PublicKeyCredentialDescriptor(id=cred.credential_id) for cred in existing_credentials
         ]
 
         options = generate_registration_options(

@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 from rich.table import Table
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from gatekeeper.cli._helpers import console, err_console, run_async
 from gatekeeper.database import async_session_maker
@@ -26,15 +26,11 @@ class StatusFilter(str, Enum):
 @run_async
 async def add(
     email: Annotated[str, typer.Option("--email", "-e", help="User email address")],
-    admin: Annotated[
-        bool, typer.Option("--admin", "-a", help="Grant admin privileges")
-    ] = False,
+    admin: Annotated[bool, typer.Option("--admin", "-a", help="Grant admin privileges")] = False,
     seeded: Annotated[
         bool, typer.Option("--seeded", "-s", help="Auto-approve, skip invitation email")
     ] = False,
-    name: Annotated[
-        str | None, typer.Option("--name", "-n", help="User display name")
-    ] = None,
+    name: Annotated[str | None, typer.Option("--name", "-n", help="User display name")] = None,
 ):
     """Add a user to Gatekeeper."""
     email = email.lower().strip()
@@ -69,13 +65,11 @@ async def add(
                 )
             except Exception as e:
                 console.print(
-                    f"[yellow]\u26a0[/yellow] Created user {email} (pending). Failed to send email: {e}"
+                    f"[yellow]⚠[/yellow] Created user {email} (pending). Failed to send email: {e}"
                 )
         else:
             role = " [bold]Admin.[/bold]" if admin else ""
-            console.print(
-                f"[green]\u2713[/green] Created user {email} (approved, seeded).{role}"
-            )
+            console.print(f"[green]\u2713[/green] Created user {email} (approved, seeded).{role}")
 
 
 @app.command("list")
@@ -84,9 +78,7 @@ async def list_users(
     status: Annotated[
         StatusFilter, typer.Option("--status", help="Filter by status")
     ] = StatusFilter.all,
-    admins_only: Annotated[
-        bool, typer.Option("--admins-only", help="Show only admins")
-    ] = False,
+    admins_only: Annotated[bool, typer.Option("--admins-only", help="Show only admins")] = False,
     csv: Annotated[bool, typer.Option("--csv", help="Output as CSV for export")] = False,
 ):
     """List all users in the system."""
@@ -106,9 +98,9 @@ async def list_users(
             console.print("email,name,status,admin,created")
             for u in users:
                 name = u.name or ""
-                console.print(
-                    f"{u.email},{name},{u.status.value},{'yes' if u.is_admin else 'no'},{u.created_at:%Y-%m-%d}"
-                )
+                admin = "yes" if u.is_admin else "no"
+                created = f"{u.created_at:%Y-%m-%d}"
+                console.print(f"{u.email},{name},{u.status.value},{admin},{created}")
             return
 
         table = Table(title="Users")
@@ -187,9 +179,7 @@ async def approve(
                 raise typer.Exit(code=1)
 
             if user.status != UserStatus.PENDING:
-                err_console.print(
-                    f"[red]Error:[/red] User is already {user.status.value}."
-                )
+                err_console.print(f"[red]Error:[/red] User is already {user.status.value}.")
                 raise typer.Exit(code=1)
 
             user.status = UserStatus.APPROVED
@@ -234,9 +224,7 @@ async def reject(
 @run_async
 async def remove(
     email: Annotated[str, typer.Option("--email", "-e", help="User email to remove")],
-    force: Annotated[
-        bool, typer.Option("--force", "-f", help="Skip confirmation prompt")
-    ] = False,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation prompt")] = False,
 ):
     """Remove a user and all their data (sessions, passkeys, OTPs)."""
     email = email.lower().strip()
@@ -260,16 +248,14 @@ async def remove(
 
         if user.is_seeded:
             err_console.print(
-                f"[red]Error:[/red] Cannot remove seeded admin. Use --force with caution."
+                "[red]Error:[/red] Cannot remove seeded admin. Use --force with caution."
             )
             if not force:
                 raise typer.Exit(code=1)
 
         await db.delete(user)
         await db.commit()
-        console.print(
-            f"[green]\u2713[/green] Removed {email} and all associated data."
-        )
+        console.print(f"[green]\u2713[/green] Removed {email} and all associated data.")
 
 
 @app.command()
@@ -279,9 +265,7 @@ async def update(
     admin: Annotated[
         bool | None, typer.Option("--admin/--no-admin", help="Set admin status")
     ] = None,
-    name: Annotated[
-        str | None, typer.Option("--name", "-n", help="Set display name")
-    ] = None,
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Set display name")] = None,
 ):
     """Update a user's profile or admin status."""
     email = email.lower().strip()

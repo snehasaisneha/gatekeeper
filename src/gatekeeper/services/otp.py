@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +24,7 @@ class OTPService:
         await self._invalidate_previous(email, purpose)
 
         code = self._generate_code()
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            minutes=self.settings.otp_expiry_minutes
-        )
+        expires_at = datetime.now(UTC) + timedelta(minutes=self.settings.otp_expiry_minutes)
 
         otp = OTP(
             email=email,
@@ -58,7 +56,7 @@ class OTPService:
                 OTP.email == email,
                 OTP.purpose == purpose,
                 OTP.used == False,  # noqa: E712
-                OTP.expires_at > datetime.now(timezone.utc),
+                OTP.expires_at > datetime.now(UTC),
             )
             .order_by(OTP.created_at.desc())
             .limit(1)

@@ -1,7 +1,7 @@
 """
 Tests for authentication flows.
 """
-import pytest
+
 from httpx import AsyncClient
 
 from gatekeeper.models.otp import OTPPurpose
@@ -221,7 +221,8 @@ class TestOTPExpiry:
         )
 
         assert response.status_code == 400
-        assert "invalid" in response.json()["detail"].lower() or "expired" in response.json()["detail"].lower()
+        detail = response.json()["detail"].lower()
+        assert "invalid" in detail or "expired" in detail
 
 
 class TestOTPAttempts:

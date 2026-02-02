@@ -3,15 +3,15 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Cookie, Header, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Path, Request, Response, status
 from sqlalchemy import select
 
 from gatekeeper.api.deps import CurrentUser, CurrentUserOptional, DbSession
 from gatekeeper.config import get_settings
-from gatekeeper.rate_limit import limiter
 from gatekeeper.models.app import AccessRequestStatus, App, AppAccessRequest, UserAppAccess
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.user import User, UserStatus
+from gatekeeper.rate_limit import limiter
 from gatekeeper.schemas.app import AccessRequestCreate
 from gatekeeper.schemas.auth import (
     AuthResponse,
@@ -66,7 +66,8 @@ def clear_session_cookie(response: Response) -> None:
         403: {"description": "Access denied to this app"},
     },
     summary="Validate access (nginx auth_request)",
-    description="Validate user authentication and app access. Used by nginx auth_request directive.",
+    description="Validate user authentication and app access. "
+    "Used by nginx auth_request directive.",
 )
 async def validate(
     response: Response,
@@ -190,7 +191,8 @@ async def register(request: Request, data: OTPRequest, db: DbSession) -> Message
         429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Complete registration",
-    description="Verify the OTP and complete registration. Auto-approves if email domain is in accepted domains.",
+    description="Verify the OTP and complete registration. "
+    "Auto-approves if email domain is in accepted domains.",
 )
 @limiter.limit("5/15minutes")
 async def register_verify(
@@ -564,7 +566,8 @@ async def passkey_register_options(current_user: CurrentUser, db: DbSession) -> 
     passkey_service = PasskeyService(db)
     options = await passkey_service.generate_registration_options(current_user)
     # Store challenge at module level so it persists across requests
-    _passkey_registration_challenges[str(current_user.id)] = passkey_service._challenges.get(str(current_user.id))
+    user_id = str(current_user.id)
+    _passkey_registration_challenges[user_id] = passkey_service._challenges.get(user_id)
     return options
 
 

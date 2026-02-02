@@ -1,10 +1,7 @@
 import asyncio
-import tempfile
 from collections.abc import AsyncGenerator
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -51,9 +48,7 @@ async def test_engine(test_db_path):
 @pytest_asyncio.fixture
 async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
-    async_session = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
         yield session
@@ -63,9 +58,9 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture
 async def client(test_engine, test_session, test_db_path) -> AsyncGenerator[AsyncClient, None]:
     """Create a test client with mocked dependencies."""
-    from gatekeeper.main import app
     from gatekeeper.api.deps import get_db
     from gatekeeper.config import Settings, get_settings
+    from gatekeeper.main import app
     from gatekeeper.rate_limit import limiter
 
     # Create test settings with the temp database
@@ -88,9 +83,8 @@ async def client(test_engine, test_session, test_db_path) -> AsyncGenerator[Asyn
     # Override dependencies
     async def override_get_db():
         from fastapi import HTTPException
-        async_session = async_sessionmaker(
-            test_engine, class_=AsyncSession, expire_on_commit=False
-        )
+
+        async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
         async with async_session() as session:
             try:
                 yield session
@@ -113,15 +107,35 @@ async def client(test_engine, test_session, test_db_path) -> AsyncGenerator[Asyn
     limiter.enabled = False
 
     # Also patch get_settings at module level for services and auth
-    with patch("gatekeeper.config.get_settings", return_value=test_settings):
-        with patch("gatekeeper.services.otp.get_settings", return_value=test_settings):
-            with patch("gatekeeper.api.v1.auth.settings", test_settings):
-                with patch("gatekeeper.services.email.EmailService.send_otp", new_callable=AsyncMock, return_value=True):
-                    with patch("gatekeeper.services.email.EmailService.send_registration_pending", new_callable=AsyncMock, return_value=True):
-                        with patch("gatekeeper.services.email.EmailService.send_pending_registration_notification", new_callable=AsyncMock, return_value=True):
-                            transport = ASGITransport(app=app)
-                            async with AsyncClient(transport=transport, base_url="http://test") as ac:
-                                yield ac
+    patches = [
+        patch("gatekeeper.config.get_settings", return_value=test_settings),
+        patch("gatekeeper.services.otp.get_settings", return_value=test_settings),
+        patch("gatekeeper.api.v1.auth.settings", test_settings),
+        patch(
+            "gatekeeper.services.email.EmailService.send_otp",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "gatekeeper.services.email.EmailService.send_registration_pending",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "gatekeeper.services.email.EmailService.send_pending_registration_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        for p in patches:
+            p.stop()
 
     # Re-enable rate limiting after tests
     limiter.enabled = True
@@ -135,14 +149,14 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     This session shares the same engine as the API, so committed
     transactions will be visible after calling commit().
     """
-    async_session = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
 
 
-async def get_latest_otp(db_session: AsyncSession, email: str, purpose: OTPPurpose = OTPPurpose.REGISTER) -> str | None:
+async def get_latest_otp(
+    db_session: AsyncSession, email: str, purpose: OTPPurpose = OTPPurpose.REGISTER
+) -> str | None:
     """Get the latest OTP code for an email."""
     # Commit any pending changes and start fresh transaction to see external commits
     await db_session.commit()
@@ -185,9 +199,9 @@ async def create_test_otp(
 ) -> OTP:
     """Create a test OTP directly in the database."""
     if expired:
-        expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        expires_at = datetime.now(UTC) - timedelta(minutes=1)
     else:
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        expires_at = datetime.now(UTC) + timedelta(minutes=5)
 
     otp = OTP(
         email=email.lower(),

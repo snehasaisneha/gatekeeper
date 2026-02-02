@@ -2,7 +2,6 @@
 Tests for multi-app functionality.
 """
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,9 +12,7 @@ from gatekeeper.models.user import UserStatus
 from .conftest import create_test_user, get_latest_otp
 
 
-async def create_test_app(
-    db_session: AsyncSession, slug: str, name: str
-) -> App:
+async def create_test_app(db_session: AsyncSession, slug: str, name: str) -> App:
     """Create a test app directly in the database."""
     app = App(slug=slug, name=name)
     db_session.add(app)
@@ -104,8 +101,8 @@ class TestValidateEndpoint:
         self, client: AsyncClient, db_session: AsyncSession
     ):
         """Test that registered apps deny access to users without grants."""
-        # Create app
-        app = await create_test_app(db_session, "restricted-app", "Restricted App")
+        # Create app (needed to establish app in DB, but not referenced directly)
+        await create_test_app(db_session, "restricted-app", "Restricted App")
 
         # Create and sign in user (no app access granted)
         email = "no-access@approved-domain.com"

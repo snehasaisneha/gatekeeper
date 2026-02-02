@@ -7,7 +7,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from gatekeeper.database import Base
 
-
 MAX_OTP_ATTEMPTS = 5
 
 

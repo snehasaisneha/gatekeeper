@@ -66,10 +66,7 @@ async def list_apps():
 
         for a in apps:
             # Count users with access
-            count_stmt = (
-                select(UserAppAccess)
-                .where(UserAppAccess.app_id == a.id)
-            )
+            count_stmt = select(UserAppAccess).where(UserAppAccess.app_id == a.id)
             count_result = await db.execute(count_stmt)
             user_count = len(count_result.scalars().all())
 
@@ -288,9 +285,7 @@ async def revoke(
         access = access_result.scalar_one_or_none()
 
         if not access:
-            err_console.print(
-                f"[red]Error:[/red] User '{email}' does not have access to '{slug}'"
-            )
+            err_console.print(f"[red]Error:[/red] User '{email}' does not have access to '{slug}'")
             raise typer.Exit(code=1)
 
         await db.delete(access)
@@ -302,17 +297,13 @@ async def revoke(
 @run_async
 async def remove(
     slug: Annotated[str, typer.Option("--slug", "-s", help="App slug to remove")],
-    force: Annotated[
-        bool, typer.Option("--force", "-f", help="Skip confirmation prompt")
-    ] = False,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation prompt")] = False,
 ):
     """Remove an app and all associated access grants."""
     slug = slug.lower().strip()
 
     if not force:
-        confirm = typer.confirm(
-            f"Remove app '{slug}'? This revokes all user access grants."
-        )
+        confirm = typer.confirm(f"Remove app '{slug}'? This revokes all user access grants.")
         if not confirm:
             console.print("Aborted.")
             raise typer.Exit()

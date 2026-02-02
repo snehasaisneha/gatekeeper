@@ -195,6 +195,7 @@ async def show_status() -> None:
                 print(f"  {status} {f.name}")
     else:
         import psycopg2
+
         conn = psycopg2.connect(conn_str)
         cur = conn.cursor()
         try:
@@ -213,6 +214,7 @@ async def show_status() -> None:
 
 
 # Entry points for pyproject.toml scripts
+
 
 def run_all() -> None:
     """Entry point for `uv run all-migrations`."""

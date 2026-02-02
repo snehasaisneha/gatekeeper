@@ -9,7 +9,7 @@ from gatekeeper.cli._helpers import console, err_console, run_async
 from gatekeeper.config import get_settings
 from gatekeeper.database import async_session_maker
 from gatekeeper.models.session import Session
-from gatekeeper.models.user import User, UserStatus
+from gatekeeper.models.user import User
 
 app = typer.Typer(no_args_is_help=True, help="Operational commands.")
 
@@ -32,8 +32,14 @@ async def test_email(
             sent = await email_service._send_email(
                 to=to,
                 subject=f"[{settings.app_name}] Test Email",
-                body_text="This is a test email from Gatekeeper.\n\nIf you're reading this, your email configuration is working correctly.",
-                body_html="<p>This is a test email from Gatekeeper.</p><p>If you're reading this, your email configuration is working correctly.</p>",
+                body_text=(
+                    "This is a test email from Gatekeeper.\n\n"
+                    "If you're reading this, your email configuration is working correctly."
+                ),
+                body_html=(
+                    "<p>This is a test email from Gatekeeper.</p>"
+                    "<p>If you're reading this, your email configuration is working correctly.</p>"
+                ),
             )
 
             if sent:
@@ -41,7 +47,7 @@ async def test_email(
                     f"[green]\u2713[/green] Test email sent to {to} via {settings.email_provider}"
                 )
             else:
-                err_console.print(f"[red]\u2717[/red] Failed to send test email")
+                err_console.print("[red]\u2717[/red] Failed to send test email")
                 raise typer.Exit(code=1)
         except Exception as e:
             err_console.print(f"[red]\u2717[/red] Failed to send email: {e}")
@@ -71,7 +77,8 @@ async def healthcheck():
 
             db_type = "SQLite" if "sqlite" in settings.database_url else "PostgreSQL"
             console.print(
-                f"Database:     [green]\u2713[/green] connected ({db_type}, {migration_count} migrations applied)"
+                f"Database:     [green]✓[/green] connected "
+                f"({db_type}, {migration_count} migrations applied)"
             )
     except Exception as e:
         console.print(f"Database:     [red]\u2717[/red] {e}")
@@ -85,9 +92,7 @@ async def healthcheck():
             admin_count = result.scalar() or 0
 
             if admin_count > 0:
-                console.print(
-                    f"Admin user:   [green]\u2713[/green] {admin_count} admin(s) found"
-                )
+                console.print(f"Admin user:   [green]\u2713[/green] {admin_count} admin(s) found")
             else:
                 console.print("Admin user:   [red]\u2717[/red] no admin users found")
                 all_ok = False
@@ -96,22 +101,20 @@ async def healthcheck():
 
     # Email config
     if settings.email_provider:
-        console.print(
-            f"Email:        [green]\u2713[/green] {settings.email_provider.upper()} configured (from: {settings.email_from_address})"
-        )
+        provider = settings.email_provider.upper()
+        from_addr = settings.email_from_address
+        console.print(f"Email:        [green]✓[/green] {provider} configured (from: {from_addr})")
     else:
         console.print("Email:        [red]\u2717[/red] email provider not configured")
         all_ok = False
 
     # WebAuthn
     if settings.webauthn_rp_id and settings.webauthn_origin:
-        console.print(
-            f"WebAuthn:     [green]\u2713[/green] RP ID: {settings.webauthn_rp_id}, Origin: {settings.webauthn_origin}"
-        )
+        rp_id = settings.webauthn_rp_id
+        origin = settings.webauthn_origin
+        console.print(f"WebAuthn:     [green]✓[/green] RP ID: {rp_id}, Origin: {origin}")
     else:
-        console.print(
-            "WebAuthn:     [yellow]\u26a0[/yellow] not configured (passkeys disabled)"
-        )
+        console.print("WebAuthn:     [yellow]\u26a0[/yellow] not configured (passkeys disabled)")
 
     # User stats
     try:
@@ -171,9 +174,7 @@ async def reset_sessions(
             await db.execute(delete_stmt)
             await db.commit()
 
-            console.print(
-                f"[green]\u2713[/green] Cleared {count} session(s) for {email}."
-            )
+            console.print(f"[green]\u2713[/green] Cleared {count} session(s) for {email}.")
         else:
             # Count and delete all sessions
             count_stmt = select(func.count(Session.id))
