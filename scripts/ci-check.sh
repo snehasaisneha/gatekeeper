@@ -19,4 +19,8 @@ echo "=== Frontend Build ==="
 npm -C frontend install --silent
 npm -C frontend run build
 
+echo "=== Docs Build ==="
+uv sync --group docs --quiet
+uv run sphinx-build -b html -c docs docs/source docs/_build/html -W --keep-going -q
+
 echo "=== All checks passed ==="
