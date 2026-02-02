@@ -3,6 +3,7 @@ const API_BASE = '/api/v1';
 export interface User {
   id: string;
   email: string;
+  name: string | null;
   status: 'pending' | 'approved' | 'rejected';
   is_admin: boolean;
   is_seeded: boolean;
@@ -30,6 +31,50 @@ export interface UserListResponse {
 export interface PendingUsersResponse {
   users: User[];
   total: number;
+}
+
+// App types
+export interface App {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+}
+
+export interface AppList {
+  apps: App[];
+  total: number;
+}
+
+export interface AppUserAccess {
+  email: string;
+  role: string | null;
+  granted_at: string;
+  granted_by: string | null;
+}
+
+export interface AppDetail extends App {
+  users: AppUserAccess[];
+}
+
+export interface UserAppAccess {
+  app_slug: string;
+  app_name: string;
+  role: string | null;
+  granted_at: string;
+}
+
+export interface AccessRequest {
+  id: string;
+  user_email: string;
+  user_name: string | null;
+  app_slug: string;
+  app_name: string;
+  message: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
 }
 
 class ApiError extends Error {
@@ -96,9 +141,23 @@ export const api = {
 
     me: () => request<User>('/auth/me'),
 
+    updateProfile: (data: { name?: string }) =>
+      request<User>('/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
     deleteAccount: () =>
       request<MessageResponse>('/auth/me', {
         method: 'DELETE',
+      }),
+
+    myApps: () => request<UserAppAccess[]>('/auth/me/apps'),
+
+    requestAppAccess: (slug: string, message?: string) =>
+      request<MessageResponse>(`/auth/me/apps/${slug}/request`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
       }),
 
     passkeyRegisterOptions: () =>
@@ -169,6 +228,49 @@ export const api = {
     deleteUser: (id: string) =>
       request<MessageResponse>(`/admin/users/${id}`, {
         method: 'DELETE',
+      }),
+
+    // App management
+    listApps: () => request<AppList>('/admin/apps'),
+
+    createApp: (slug: string, name: string) =>
+      request<App>('/admin/apps', {
+        method: 'POST',
+        body: JSON.stringify({ slug, name }),
+      }),
+
+    getApp: (slug: string) => request<AppDetail>(`/admin/apps/${slug}`),
+
+    deleteApp: (slug: string) =>
+      request<MessageResponse>(`/admin/apps/${slug}`, {
+        method: 'DELETE',
+      }),
+
+    grantAccess: (slug: string, email: string, role?: string) =>
+      request<MessageResponse>(`/admin/apps/${slug}/grant`, {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      }),
+
+    revokeAccess: (slug: string, email: string) =>
+      request<MessageResponse>(`/admin/apps/${slug}/revoke?email=${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+      }),
+
+    listAccessRequests: (slug: string, status?: string) => {
+      const params = status ? `?status_filter=${status}` : '';
+      return request<AccessRequest[]>(`/admin/apps/${slug}/requests${params}`);
+    },
+
+    approveAccessRequest: (slug: string, requestId: string, role?: string) =>
+      request<MessageResponse>(`/admin/apps/${slug}/requests/${requestId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ role }),
+      }),
+
+    rejectAccessRequest: (slug: string, requestId: string) =>
+      request<MessageResponse>(`/admin/apps/${slug}/requests/${requestId}/reject`, {
+        method: 'POST',
       }),
   },
 };
