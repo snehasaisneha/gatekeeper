@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { AuthProvider, useAuth, useRequireAuth } from './AuthContext';
+import { AuthProvider, useRequireAuth } from './AuthContext';
 import { TopBar } from './TopBar';
 import { AppCard } from './AppCard';
-import { PublicAppsList } from './PublicAppsList';
+import { PrivateAppsList } from './PrivateAppsList';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { UserAppAccess } from '@/lib/api';
@@ -58,7 +58,7 @@ function HomePageContent({ appName }: HomePageProps) {
             </p>
           </div>
 
-          {/* User's Apps Section */}
+          {/* Your Apps Section */}
           <section>
             <h2 className="text-xl font-semibold mb-4">Your Apps</h2>
             {isLoadingApps ? (
@@ -67,8 +67,8 @@ function HomePageContent({ appName }: HomePageProps) {
               </div>
             ) : apps.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/30">
-                <p>You don't have any apps with assigned roles yet.</p>
-                <p className="text-sm mt-1">Public apps are available below.</p>
+                <p>You don't have access to any apps yet.</p>
+                <p className="text-sm mt-1">Request access to private apps below.</p>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -85,10 +85,10 @@ function HomePageContent({ appName }: HomePageProps) {
             )}
           </section>
 
-          {/* Public Apps Section */}
+          {/* Request Access Section */}
           <section>
-            <h2 className="text-xl font-semibold mb-4">Public Apps</h2>
-            <PublicAppsList userApps={apps} />
+            <h2 className="text-xl font-semibold mb-4">Request Access</h2>
+            <PrivateAppsList />
           </section>
         </div>
       </main>

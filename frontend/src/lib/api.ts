@@ -170,6 +170,8 @@ export const api = {
 
     publicApps: () => request<AppPublic[]>('/auth/apps/public'),
 
+    privateApps: () => request<AppPublic[]>('/auth/apps/private'),
+
     requestAppAccess: (slug: string, message?: string) =>
       request<MessageResponse>(`/auth/me/apps/${slug}/request`, {
         method: 'POST',

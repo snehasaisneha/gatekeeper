@@ -453,6 +453,41 @@ async def list_public_apps(db: DbSession) -> list[AppPublic]:
 
 
 @router.get(
+    "/apps/private",
+    response_model=list[AppPublic],
+    responses={
+        200: {"description": "List of private apps user can request access to"},
+        401: {"model": ErrorResponse, "description": "Not authenticated"},
+    },
+    summary="List private apps",
+    description="List private apps the user doesn't have access to (for requesting access).",
+)
+async def list_private_apps(
+    current_user: CurrentUser,
+    db: DbSession,
+) -> list[AppPublic]:
+    # Get IDs of apps user already has access to
+    access_stmt = select(UserAppAccess.app_id).where(UserAppAccess.user_id == current_user.id)
+    access_result = await db.execute(access_stmt)
+    accessible_app_ids = {row[0] for row in access_result.all()}
+
+    # Get private apps the user doesn't have access to
+    stmt = (
+        select(App)
+        .where(App.is_public == False)  # noqa: E712
+        .where(App.id.notin_(accessible_app_ids) if accessible_app_ids else True)
+        .order_by(App.name)
+    )
+    result = await db.execute(stmt)
+    apps = result.scalars().all()
+
+    return [
+        AppPublic(slug=app.slug, name=app.name, description=app.description, app_url=app.app_url)
+        for app in apps
+    ]
+
+
+@router.get(
     "/me/apps",
     response_model=list[UserAppAccessInfo],
     responses={
@@ -460,12 +495,13 @@ async def list_public_apps(db: DbSession) -> list[AppPublic]:
         401: {"model": ErrorResponse, "description": "Not authenticated"},
     },
     summary="List my apps",
-    description="List all apps the current user has been granted access to.",
+    description="List all apps the user can access (explicit grants + public apps).",
 )
 async def list_my_apps(
     current_user: CurrentUser,
     db: DbSession,
 ) -> list[UserAppAccessInfo]:
+    # Get apps with explicit access
     stmt = (
         select(UserAppAccess, App)
         .join(App, UserAppAccess.app_id == App.id)
@@ -475,8 +511,10 @@ async def list_my_apps(
     result = await db.execute(stmt)
     rows = result.all()
 
-    return [
-        UserAppAccessInfo(
+    # Build result with explicit access apps
+    apps_by_slug: dict[str, UserAppAccessInfo] = {}
+    for access, app in rows:
+        apps_by_slug[app.slug] = UserAppAccessInfo(
             app_slug=app.slug,
             app_name=app.name,
             app_description=app.description,
@@ -484,8 +522,25 @@ async def list_my_apps(
             role=access.role,
             granted_at=access.granted_at,
         )
-        for access, app in rows
-    ]
+
+    # Add public apps the user doesn't have explicit access to
+    public_stmt = select(App).where(App.is_public == True).order_by(App.name)  # noqa: E712
+    public_result = await db.execute(public_stmt)
+    public_apps = public_result.scalars().all()
+
+    for app in public_apps:
+        if app.slug not in apps_by_slug:
+            apps_by_slug[app.slug] = UserAppAccessInfo(
+                app_slug=app.slug,
+                app_name=app.name,
+                app_description=app.description,
+                app_url=app.app_url,
+                role="user",  # Default role for public apps
+                granted_at=app.created_at,  # Use app creation time
+            )
+
+    # Return sorted by app name
+    return sorted(apps_by_slug.values(), key=lambda x: x.app_name.lower())
 
 
 @router.post(
