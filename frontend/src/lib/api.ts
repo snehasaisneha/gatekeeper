@@ -50,6 +50,7 @@ export interface AppPublic {
   slug: string;
   name: string;
   description: string | null;
+  app_url: string | null;
 }
 
 export interface AppList {

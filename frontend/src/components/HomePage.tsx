@@ -67,8 +67,8 @@ function HomePageContent({ appName }: HomePageProps) {
               </div>
             ) : apps.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/30">
-                <p>You don't have access to any apps yet.</p>
-                <p className="text-sm mt-1">Request access to public apps below.</p>
+                <p>You don't have any apps with assigned roles yet.</p>
+                <p className="text-sm mt-1">Public apps are available below.</p>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -85,9 +85,9 @@ function HomePageContent({ appName }: HomePageProps) {
             )}
           </section>
 
-          {/* Public Apps Discovery Section */}
+          {/* Public Apps Section */}
           <section>
-            <h2 className="text-xl font-semibold mb-4">Discover Apps</h2>
+            <h2 className="text-xl font-semibold mb-4">Public Apps</h2>
             <PublicAppsList userApps={apps} />
           </section>
         </div>

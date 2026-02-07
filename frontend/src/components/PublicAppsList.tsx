@@ -2,10 +2,8 @@ import * as React from 'react';
 import { api, ApiError } from '@/lib/api';
 import type { AppPublic, UserAppAccess } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AppWindow, Clock } from 'lucide-react';
-import { RequestAccessModal } from './RequestAccessModal';
+import { Loader2, AppWindow, ExternalLink } from 'lucide-react';
 
 interface PublicAppsListProps {
   userApps: UserAppAccess[];
@@ -13,10 +11,8 @@ interface PublicAppsListProps {
 
 export function PublicAppsList({ userApps }: PublicAppsListProps) {
   const [publicApps, setPublicApps] = React.useState<AppPublic[]>([]);
-  const [pendingRequests, setPendingRequests] = React.useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [selectedApp, setSelectedApp] = React.useState<AppPublic | null>(null);
 
   const userAppSlugs = React.useMemo(
     () => new Set(userApps.map((a) => a.app_slug)),
@@ -42,12 +38,8 @@ export function PublicAppsList({ userApps }: PublicAppsListProps) {
     fetchPublicApps();
   }, []);
 
+  // Filter out apps the user already has explicit access to (shown in "Your Apps")
   const availableApps = publicApps.filter((app) => !userAppSlugs.has(app.slug));
-
-  const handleRequestSuccess = (slug: string) => {
-    setPendingRequests((prev) => new Set([...prev, slug]));
-    setSelectedApp(null);
-  };
 
   if (isLoading) {
     return (
@@ -68,62 +60,46 @@ export function PublicAppsList({ userApps }: PublicAppsListProps) {
   if (availableApps.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/30">
-        <p>No public apps available for access requests.</p>
+        <p>No additional public apps available.</p>
       </div>
     );
   }
 
   return (
-    <>
-      <div className="rounded-lg border divide-y">
-        {availableApps.map((app) => {
-          const isPending = pendingRequests.has(app.slug);
-
-          return (
-            <div
-              key={app.slug}
-              className="flex items-center justify-between p-4 gap-4"
-            >
-              <div className="flex items-start gap-3 min-w-0">
-                <AppWindow className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="font-medium">{app.name}</p>
-                  {app.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {app.description}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex-shrink-0">
-                {isPending ? (
-                  <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3 w-3" />
-                    Pending
-                  </Badge>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedApp(app)}
-                  >
-                    Request Access
-                  </Button>
-                )}
-              </div>
+    <div className="rounded-lg border divide-y">
+      {availableApps.map((app) => (
+        <div
+          key={app.slug}
+          className="flex items-center justify-between p-4 gap-4"
+        >
+          <div className="flex items-start gap-3 min-w-0">
+            <AppWindow className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-medium">{app.name}</p>
+              {app.description && (
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {app.description}
+                </p>
+              )}
             </div>
-          );
-        })}
-      </div>
+          </div>
 
-      {selectedApp && (
-        <RequestAccessModal
-          app={selectedApp}
-          onClose={() => setSelectedApp(null)}
-          onSuccess={() => handleRequestSuccess(selectedApp.slug)}
-        />
-      )}
-    </>
+          <div className="flex-shrink-0">
+            {app.app_url ? (
+              <Button asChild size="sm">
+                <a href={app.app_url} target="_blank" rel="noopener noreferrer">
+                  Open
+                  <ExternalLink className="h-4 w-4 ml-1" />
+                </a>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                No URL
+              </Button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

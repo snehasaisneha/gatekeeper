@@ -39,6 +39,7 @@ class AppPublic(BaseModel):
     slug: str
     name: str
     description: str | None
+    app_url: str | None
 
 
 class AppUpdate(BaseModel):

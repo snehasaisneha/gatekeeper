@@ -446,7 +446,10 @@ async def list_public_apps(db: DbSession) -> list[AppPublic]:
     result = await db.execute(stmt)
     apps = result.scalars().all()
 
-    return [AppPublic(slug=app.slug, name=app.name, description=app.description) for app in apps]
+    return [
+        AppPublic(slug=app.slug, name=app.name, description=app.description, app_url=app.app_url)
+        for app in apps
+    ]
 
 
 @router.get(
