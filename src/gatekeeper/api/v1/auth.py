@@ -115,7 +115,7 @@ async def validate(
         # default_app_access == "allow"
         return Response(status_code=status.HTTP_200_OK, headers=base_headers)
 
-    # App registered - check user access
+    # Check if user has explicit access (with role)
     access_stmt = select(UserAppAccess).where(
         UserAppAccess.user_id == current_user.id,
         UserAppAccess.app_id == app.id,
@@ -123,15 +123,19 @@ async def validate(
     access_result = await db.execute(access_stmt)
     access = access_result.scalar_one_or_none()
 
-    if not access:
-        return Response(status_code=status.HTTP_403_FORBIDDEN)
+    if access:
+        # User has explicit access - return headers with role if set
+        headers = {**base_headers}
+        if access.role:
+            headers["X-Auth-Role"] = access.role
+        return Response(status_code=status.HTTP_200_OK, headers=headers)
 
-    # User has access - return headers with role if set
-    headers = {**base_headers}
-    if access.role:
-        headers["X-Auth-Role"] = access.role
+    # No explicit access - public apps are accessible to all approved users
+    if app.is_public:
+        return Response(status_code=status.HTTP_200_OK, headers=base_headers)
 
-    return Response(status_code=status.HTTP_200_OK, headers=headers)
+    # Private app without access - deny
+    return Response(status_code=status.HTTP_403_FORBIDDEN)
 
 
 @router.post(

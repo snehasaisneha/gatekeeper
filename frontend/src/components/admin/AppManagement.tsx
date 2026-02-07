@@ -19,6 +19,7 @@ import {
   X,
   AppWindow,
   Settings,
+  Pencil,
 } from 'lucide-react';
 
 interface AppManagementProps {
@@ -62,6 +63,10 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
 
   // Action loading states
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
+
+  // Edit user role
+  const [editingUserRole, setEditingUserRole] = React.useState<string | null>(null);
+  const [editUserRoleValue, setEditUserRoleValue] = React.useState<string>('');
 
   const loadApps = React.useCallback(async () => {
     setIsLoading(true);
@@ -247,6 +252,30 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleSaveUserRole = async (email: string) => {
+    if (!expandedApp) return;
+
+    setActionLoading(`role-${email}`);
+    try {
+      await api.admin.grantAccess(expandedApp, email, editUserRoleValue || undefined);
+      setEditingUserRole(null);
+      setEditUserRoleValue('');
+      await loadAppDetail(expandedApp);
+      onRefresh?.();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const startEditingRole = (email: string, currentRole: string | null) => {
+    setEditingUserRole(email);
+    setEditUserRoleValue(currentRole || '');
   };
 
   const handleApproveRequest = async (requestId: string) => {
@@ -600,10 +629,56 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                                   <tr key={user.email} className="border-b last:border-0">
                                     <td className="p-3">{user.email}</td>
                                     <td className="p-3">
-                                      {user.role ? (
-                                        <Badge variant="outline">{user.role}</Badge>
+                                      {editingUserRole === user.email ? (
+                                        <div className="flex items-center gap-2">
+                                          <select
+                                            value={editUserRoleValue}
+                                            onChange={(e) => setEditUserRoleValue(e.target.value)}
+                                            className="h-8 w-28 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                                          >
+                                            <option value="">No role</option>
+                                            {(appDetail?.roles || 'admin,user').split(',').map((role) => (
+                                              <option key={role.trim()} value={role.trim()}>
+                                                {role.trim()}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleSaveUserRole(user.email)}
+                                            disabled={actionLoading === `role-${user.email}`}
+                                          >
+                                            {actionLoading === `role-${user.email}` ? (
+                                              <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                              <Check className="h-4 w-4" />
+                                            )}
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setEditingUserRole(null)}
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </Button>
+                                        </div>
                                       ) : (
-                                        <span className="text-muted-foreground">—</span>
+                                        <div className="flex items-center gap-2">
+                                          {user.role ? (
+                                            <Badge variant="outline">{user.role}</Badge>
+                                          ) : (
+                                            <span className="text-muted-foreground">—</span>
+                                          )}
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => startEditingRole(user.email, user.role)}
+                                            className="h-6 w-6 p-0"
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                        </div>
                                       )}
                                     </td>
                                     <td className="p-3 text-muted-foreground">
