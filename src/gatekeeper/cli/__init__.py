@@ -1,19 +1,21 @@
-"""Gatekeeper CLI - manage users, apps, and operations."""
+"""Gatekeeper CLI - manage users, apps, domains, and operations."""
 
 import typer
 
 from gatekeeper.cli.apps import app as apps_app
+from gatekeeper.cli.domains import app as domains_app
 from gatekeeper.cli.ops import app as ops_app
 from gatekeeper.cli.users import app as users_app
 
 app = typer.Typer(
     name="gk",
-    help="Gatekeeper CLI - manage users, apps, and operations.",
+    help="Gatekeeper CLI - manage users, apps, domains, and operations.",
     no_args_is_help=True,
 )
 
 app.add_typer(users_app, name="users", help="User management commands.")
 app.add_typer(apps_app, name="apps", help="App management commands.")
+app.add_typer(domains_app, name="domains", help="Approved domain management commands.")
 app.add_typer(ops_app, name="ops", help="Operational commands.")
 
 

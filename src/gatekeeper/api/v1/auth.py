@@ -8,11 +8,11 @@ from sqlalchemy import select
 
 from gatekeeper.api.deps import CurrentUser, CurrentUserOptional, DbSession
 from gatekeeper.config import get_settings
-from gatekeeper.models.app import AccessRequestStatus, App, AppAccessRequest, UserAppAccess
+from gatekeeper.models.app import App, UserAppAccess
+from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.rate_limit import limiter
-from gatekeeper.schemas.app import AccessRequestCreate, AppPublic
 from gatekeeper.schemas.auth import (
     AuthResponse,
     ErrorResponse,
@@ -40,6 +40,14 @@ COOKIE_NAME = "session"
 COOKIE_MAX_AGE = settings.session_expiry_days * 24 * 60 * 60
 
 
+async def is_internal_user(db: DbSession, email: str) -> bool:
+    """Check if user's email domain is in approved_domains table."""
+    domain = email.split("@")[-1].lower()
+    stmt = select(ApprovedDomain).where(ApprovedDomain.domain == domain)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none() is not None
+
+
 def set_session_cookie(response: Response, token: str) -> None:
     signed_token = create_signed_token(token)
     response.set_cookie(
@@ -56,6 +64,22 @@ def set_session_cookie(response: Response, token: str) -> None:
 
 def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=COOKIE_NAME, domain=settings.cookie_domain, path="/")
+
+
+async def _build_user_response(db: DbSession, user: User) -> UserResponse:
+    """Build UserResponse with is_internal computed."""
+    is_internal = await is_internal_user(db, user.email)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        status=user.status,
+        is_admin=user.is_admin,
+        is_seeded=user.is_seeded,
+        is_internal=is_internal,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
 
 
 @router.get(
@@ -81,7 +105,7 @@ async def validate(
     - If user not authenticated: 401
     - If no X-GK-App header: 200 with X-Auth-User (pure identity check)
     - If app not registered: follows DEFAULT_APP_ACCESS setting
-    - If app registered: checks user_app_access table
+    - If app registered: checks access based on internal/external status
     """
     # Check authentication
     if not current_user:
@@ -115,7 +139,15 @@ async def validate(
         # default_app_access == "allow"
         return Response(status_code=status.HTTP_200_OK, headers=base_headers)
 
-    # Check if user has explicit access (with role)
+    # Check if user is internal (domain in approved_domains)
+    if await is_internal_user(db, current_user.email):
+        # Internal user - grant access with "user" role
+        return Response(
+            status_code=status.HTTP_200_OK,
+            headers={**base_headers, "X-Auth-Role": "user"},
+        )
+
+    # External user - check explicit user_app_access
     access_stmt = select(UserAppAccess).where(
         UserAppAccess.user_id == current_user.id,
         UserAppAccess.app_id == app.id,
@@ -130,11 +162,7 @@ async def validate(
             headers["X-Auth-Role"] = access.role
         return Response(status_code=status.HTTP_200_OK, headers=headers)
 
-    # No explicit access - public apps are accessible to all approved users
-    if app.is_public:
-        return Response(status_code=status.HTTP_200_OK, headers=base_headers)
-
-    # Private app without access - deny
+    # External user without explicit access - deny
     return Response(status_code=status.HTTP_403_FORBIDDEN)
 
 
@@ -247,7 +275,7 @@ async def register_verify(
 
         return AuthResponse(
             message="Registration successful",
-            user=UserResponse.model_validate(user),
+            user=await _build_user_response(db, user),
         )
     else:
         email_service = EmailService(db=db)
@@ -365,7 +393,7 @@ async def signin_verify(
 
     return AuthResponse(
         message="Successfully signed in",
-        user=UserResponse.model_validate(user),
+        user=await _build_user_response(db, user),
     )
 
 
@@ -403,8 +431,8 @@ async def signout(
     summary="Get current user",
     description="Get the currently authenticated user's information.",
 )
-async def get_me(current_user: CurrentUser) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+async def get_me(current_user: CurrentUser, db: DbSession) -> UserResponse:
+    return await _build_user_response(db, current_user)
 
 
 @router.patch(
@@ -424,67 +452,9 @@ async def update_me(
 ) -> UserResponse:
     if data.name is not None:
         current_user.name = data.name
-    # Only super-admins can toggle notification preferences
-    if data.notify_private_app_requests is not None and current_user.is_admin:
-        current_user.notify_private_app_requests = data.notify_private_app_requests
     await db.flush()
     await db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
-
-
-@router.get(
-    "/apps/public",
-    response_model=list[AppPublic],
-    responses={
-        200: {"description": "List of public apps"},
-    },
-    summary="List public apps",
-    description="List all publicly visible apps for discovery.",
-)
-async def list_public_apps(db: DbSession) -> list[AppPublic]:
-    stmt = select(App).where(App.is_public == True).order_by(App.name)  # noqa: E712
-    result = await db.execute(stmt)
-    apps = result.scalars().all()
-
-    return [
-        AppPublic(slug=app.slug, name=app.name, description=app.description, app_url=app.app_url)
-        for app in apps
-    ]
-
-
-@router.get(
-    "/apps/private",
-    response_model=list[AppPublic],
-    responses={
-        200: {"description": "List of private apps user can request access to"},
-        401: {"model": ErrorResponse, "description": "Not authenticated"},
-    },
-    summary="List private apps",
-    description="List private apps the user doesn't have access to (for requesting access).",
-)
-async def list_private_apps(
-    current_user: CurrentUser,
-    db: DbSession,
-) -> list[AppPublic]:
-    # Get IDs of apps user already has access to
-    access_stmt = select(UserAppAccess.app_id).where(UserAppAccess.user_id == current_user.id)
-    access_result = await db.execute(access_stmt)
-    accessible_app_ids = {row[0] for row in access_result.all()}
-
-    # Get private apps the user doesn't have access to
-    stmt = (
-        select(App)
-        .where(App.is_public == False)  # noqa: E712
-        .where(App.id.notin_(accessible_app_ids) if accessible_app_ids else True)
-        .order_by(App.name)
-    )
-    result = await db.execute(stmt)
-    apps = result.scalars().all()
-
-    return [
-        AppPublic(slug=app.slug, name=app.name, description=app.description, app_url=app.app_url)
-        for app in apps
-    ]
+    return await _build_user_response(db, current_user)
 
 
 @router.get(
@@ -495,149 +465,68 @@ async def list_private_apps(
         401: {"model": ErrorResponse, "description": "Not authenticated"},
     },
     summary="List my apps",
-    description="List all apps the user can access (explicit grants + public apps).",
+    description="List all apps the user can access. Internal users see all apps, "
+    "external users see only explicitly granted apps.",
 )
 async def list_my_apps(
     current_user: CurrentUser,
     db: DbSession,
 ) -> list[UserAppAccessInfo]:
-    # Get apps with explicit access
-    stmt = (
-        select(UserAppAccess, App)
-        .join(App, UserAppAccess.app_id == App.id)
-        .where(UserAppAccess.user_id == current_user.id)
-        .order_by(App.name)
-    )
-    result = await db.execute(stmt)
-    rows = result.all()
+    # Check if user is internal
+    is_internal = await is_internal_user(db, current_user.email)
 
-    # Build result with explicit access apps
-    apps_by_slug: dict[str, UserAppAccessInfo] = {}
-    for access, app in rows:
-        apps_by_slug[app.slug] = UserAppAccessInfo(
-            app_slug=app.slug,
-            app_name=app.name,
-            app_description=app.description,
-            app_url=app.app_url,
-            role=access.role,
-            granted_at=access.granted_at,
+    if is_internal:
+        # Internal users have access to ALL apps with "user" role
+        stmt = select(App).order_by(App.name)
+        result = await db.execute(stmt)
+        apps = result.scalars().all()
+
+        # Check for explicit access to override default role
+        access_stmt = (
+            select(UserAppAccess, App)
+            .join(App, UserAppAccess.app_id == App.id)
+            .where(UserAppAccess.user_id == current_user.id)
         )
+        access_result = await db.execute(access_stmt)
+        explicit_access = {row[1].slug: row[0] for row in access_result.all()}
 
-    # Add public apps the user doesn't have explicit access to
-    public_stmt = select(App).where(App.is_public == True).order_by(App.name)  # noqa: E712
-    public_result = await db.execute(public_stmt)
-    public_apps = public_result.scalars().all()
-
-    for app in public_apps:
-        if app.slug not in apps_by_slug:
-            apps_by_slug[app.slug] = UserAppAccessInfo(
+        return [
+            UserAppAccessInfo(
                 app_slug=app.slug,
                 app_name=app.name,
                 app_description=app.description,
                 app_url=app.app_url,
-                role="user",  # Default role for public apps
-                granted_at=app.created_at,  # Use app creation time
+                role=explicit_access[app.slug].role if app.slug in explicit_access else "user",
+                granted_at=(
+                    explicit_access[app.slug].granted_at
+                    if app.slug in explicit_access
+                    else app.created_at
+                ),
             )
-
-    # Return sorted by app name
-    return sorted(apps_by_slug.values(), key=lambda x: x.app_name.lower())
-
-
-@router.post(
-    "/me/apps/{slug}/request",
-    response_model=MessageResponse,
-    responses={
-        200: {"description": "Access request submitted"},
-        400: {"model": ErrorResponse, "description": "Already have access or pending request"},
-        404: {"model": ErrorResponse, "description": "App not found"},
-        401: {"model": ErrorResponse, "description": "Not authenticated"},
-    },
-    summary="Request app access",
-    description="Request access to an app. Creates a pending request for admin review.",
-)
-async def request_app_access(
-    slug: str,
-    current_user: CurrentUser,
-    db: DbSession,
-    data: AccessRequestCreate | None = None,
-) -> MessageResponse:
-    # Find the app
-    stmt = select(App).where(App.slug == slug)
-    result = await db.execute(stmt)
-    app = result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="App not found.",
+            for app in apps
+        ]
+    else:
+        # External users only see apps they have explicit access to
+        stmt = (
+            select(UserAppAccess, App)
+            .join(App, UserAppAccess.app_id == App.id)
+            .where(UserAppAccess.user_id == current_user.id)
+            .order_by(App.name)
         )
+        result = await db.execute(stmt)
+        rows = result.all()
 
-    # Check if user already has access
-    access_stmt = select(UserAppAccess).where(
-        UserAppAccess.user_id == current_user.id,
-        UserAppAccess.app_id == app.id,
-    )
-    access_result = await db.execute(access_stmt)
-    if access_result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already have access to this app.",
-        )
-
-    # Check if there's already a pending request
-    pending_stmt = select(AppAccessRequest).where(
-        AppAccessRequest.user_id == current_user.id,
-        AppAccessRequest.app_id == app.id,
-        AppAccessRequest.status == AccessRequestStatus.PENDING,
-    )
-    pending_result = await db.execute(pending_stmt)
-    if pending_result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already have a pending request for this app.",
-        )
-
-    # Create the request
-    access_request = AppAccessRequest(
-        user_id=current_user.id,
-        app_id=app.id,
-        message=data.message if data else None,
-    )
-    db.add(access_request)
-    await db.flush()
-
-    # For private apps, notify opted-in super-admins
-    # Wrap in try/except so notification failures don't affect the request
-    if not app.is_public:
-        try:
-            admin_stmt = select(User).where(
-                User.is_admin == True,  # noqa: E712
-                User.notify_private_app_requests == True,  # noqa: E712
+        return [
+            UserAppAccessInfo(
+                app_slug=app.slug,
+                app_name=app.name,
+                app_description=app.description,
+                app_url=app.app_url,
+                role=access.role,
+                granted_at=access.granted_at,
             )
-            admin_result = await db.execute(admin_stmt)
-            admins = admin_result.scalars().all()
-
-            email_service = EmailService(db=db)
-            for admin in admins:
-                await email_service.send_private_app_access_request_notification(
-                    admin_email=admin.email,
-                    requester_email=current_user.email,
-                    requester_name=current_user.name,
-                    app_name=app.name,
-                    message=data.message if data else None,
-                )
-        except Exception:
-            # Log but don't fail the request
-            import logging
-
-            logging.getLogger(__name__).exception(
-                "Failed to send private app access request notifications"
-            )
-
-    return MessageResponse(
-        message="Access request submitted",
-        detail="Your request is pending admin review.",
-    )
+            for access, app in rows
+        ]
 
 
 @router.delete(
@@ -808,7 +697,7 @@ async def passkey_signin_verify(
 
     return AuthResponse(
         message="Successfully signed in",
-        user=UserResponse.model_validate(user),
+        user=await _build_user_response(db, user),
     )
 
 

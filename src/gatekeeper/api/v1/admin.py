@@ -1,16 +1,15 @@
 import uuid
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.api.deps import AdminUser, DbSession
-from gatekeeper.models.app import AccessRequestStatus, App, AppAccessRequest, UserAppAccess
+from gatekeeper.models.app import App, UserAppAccess
+from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.schemas.admin import AdminCreateUser, AdminUpdateUser, PendingUserList, UserList
 from gatekeeper.schemas.app import (
-    AccessRequestRead,
-    AccessRequestReview,
     AppCreate,
     AppDetail,
     AppList,
@@ -21,10 +20,150 @@ from gatekeeper.schemas.app import (
     GrantAccess,
 )
 from gatekeeper.schemas.auth import ErrorResponse, MessageResponse
+from gatekeeper.schemas.domain import DomainCreate, DomainList, DomainRead
 from gatekeeper.schemas.user import UserRead
 from gatekeeper.services.email import EmailService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+async def _get_approved_domains_set(db: AsyncSession) -> set[str]:
+    """Fetch all approved domains as a set for efficient lookup."""
+    stmt = select(ApprovedDomain.domain)
+    result = await db.execute(stmt)
+    return set(result.scalars().all())
+
+
+def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
+    """Convert a User model to UserRead schema with computed is_internal."""
+    domain = user.email.split("@")[-1].lower()
+    is_internal = domain in approved_domains
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        status=user.status,
+        is_admin=user.is_admin,
+        is_seeded=user.is_seeded,
+        is_internal=is_internal,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
+# ============================================================================
+# Domain Management Endpoints
+# ============================================================================
+
+
+@router.get(
+    "/domains",
+    response_model=DomainList,
+    summary="List approved domains",
+    description="List all approved email domains for internal users. Admin only.",
+)
+async def list_domains(admin: AdminUser, db: DbSession) -> DomainList:
+    count_stmt = select(func.count(ApprovedDomain.id))
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    stmt = select(ApprovedDomain).order_by(ApprovedDomain.domain)
+    result = await db.execute(stmt)
+    domains = result.scalars().all()
+
+    return DomainList(
+        domains=[
+            DomainRead(
+                id=str(d.id),
+                domain=d.domain,
+                created_at=d.created_at,
+                created_by=d.created_by,
+            )
+            for d in domains
+        ],
+        total=total,
+    )
+
+
+@router.post(
+    "/domains",
+    response_model=DomainRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "Domain added"},
+        400: {"model": ErrorResponse, "description": "Domain already exists"},
+    },
+    summary="Add approved domain",
+    description="Add a new approved email domain. Users from this domain are internal. Admin only.",
+)
+async def add_domain(request: DomainCreate, admin: AdminUser, db: DbSession) -> DomainRead:
+    domain = request.domain.lower().strip()
+
+    # Validate domain format
+    if not domain or "." not in domain:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid domain format",
+        )
+
+    stmt = select(ApprovedDomain).where(ApprovedDomain.domain == domain)
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Domain '{domain}' already exists",
+        )
+
+    approved_domain = ApprovedDomain(
+        domain=domain,
+        created_by=admin.email,
+    )
+    db.add(approved_domain)
+    await db.flush()
+    await db.refresh(approved_domain)
+
+    return DomainRead(
+        id=str(approved_domain.id),
+        domain=approved_domain.domain,
+        created_at=approved_domain.created_at,
+        created_by=approved_domain.created_by,
+    )
+
+
+@router.delete(
+    "/domains/{domain}",
+    response_model=MessageResponse,
+    responses={
+        200: {"description": "Domain removed"},
+        404: {"model": ErrorResponse, "description": "Domain not found"},
+    },
+    summary="Remove approved domain",
+    description="Remove an approved email domain. Users from this domain become external.",
+)
+async def remove_domain(domain: str, admin: AdminUser, db: DbSession) -> MessageResponse:
+    domain = domain.lower().strip()
+
+    stmt = select(ApprovedDomain).where(ApprovedDomain.domain == domain)
+    result = await db.execute(stmt)
+    approved_domain = result.scalar_one_or_none()
+
+    if not approved_domain:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Domain '{domain}' not found",
+        )
+
+    await db.delete(approved_domain)
+    await db.flush()
+
+    return MessageResponse(message=f"Domain '{domain}' removed successfully")
+
+
+# ============================================================================
+# User Management Endpoints
+# ============================================================================
 
 
 @router.get(
@@ -55,8 +194,11 @@ async def list_users(
     result = await db.execute(query_stmt)
     users = result.scalars().all()
 
+    # Get approved domains for is_internal computation
+    approved_domains = await _get_approved_domains_set(db)
+
     return UserList(
-        users=[UserRead.model_validate(u) for u in users],
+        users=[_user_to_read(u, approved_domains) for u in users],
         total=total,
         page=page,
         page_size=page_size,
@@ -78,8 +220,11 @@ async def list_pending_users(admin: AdminUser, db: DbSession) -> PendingUserList
     result = await db.execute(stmt)
     users = result.scalars().all()
 
+    # Get approved domains for is_internal computation
+    approved_domains = await _get_approved_domains_set(db)
+
     return PendingUserList(
-        users=[UserRead.model_validate(u) for u in users],
+        users=[_user_to_read(u, approved_domains) for u in users],
         total=total,
     )
 
@@ -105,7 +250,8 @@ async def get_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> UserR
             detail="User not found",
         )
 
-    return UserRead.model_validate(user)
+    approved_domains = await _get_approved_domains_set(db)
+    return _user_to_read(user, approved_domains)
 
 
 @router.post(
@@ -154,7 +300,8 @@ async def create_user(request: AdminCreateUser, admin: AdminUser, db: DbSession)
     if request.auto_approve and request.is_admin:
         await email_service.send_super_admin_welcome(email, admin.email)
 
-    return UserRead.model_validate(user)
+    approved_domains = await _get_approved_domains_set(db)
+    return _user_to_read(user, approved_domains)
 
 
 @router.patch(
@@ -205,7 +352,8 @@ async def update_user(
         email_service = EmailService(db=db)
         await email_service.send_registration_approved(user.email)
 
-    return UserRead.model_validate(user)
+    approved_domains = await _get_approved_domains_set(db)
+    return _user_to_read(user, approved_domains)
 
 
 @router.post(
@@ -243,7 +391,8 @@ async def approve_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> U
     email_service = EmailService(db=db)
     await email_service.send_registration_approved(user.email)
 
-    return UserRead.model_validate(user)
+    approved_domains = await _get_approved_domains_set(db)
+    return _user_to_read(user, approved_domains)
 
 
 @router.post(
@@ -278,7 +427,8 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
     await db.flush()
     await db.refresh(user)
 
-    return UserRead.model_validate(user)
+    approved_domains = await _get_approved_domains_set(db)
+    return _user_to_read(user, approved_domains)
 
 
 @router.delete(
@@ -341,7 +491,6 @@ async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
                 id=str(a.id),
                 slug=a.slug,
                 name=a.name,
-                is_public=a.is_public,
                 description=a.description,
                 app_url=a.app_url,
                 roles=a.roles,
@@ -378,7 +527,6 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
     app = App(
         slug=request.slug,
         name=request.name,
-        is_public=request.is_public,
         description=request.description,
         app_url=request.app_url,
         roles=request.roles,
@@ -391,7 +539,6 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
         id=str(app.id),
         slug=app.slug,
         name=app.name,
-        is_public=app.is_public,
         description=app.description,
         app_url=app.app_url,
         roles=app.roles,
@@ -407,7 +554,7 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
         404: {"model": ErrorResponse, "description": "App not found"},
     },
     summary="Get app details",
-    description="Get app details including users with access. Admin only.",
+    description="Get app details including users with explicit access. Admin only.",
 )
 async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
     stmt = select(App).where(App.slug == slug)
@@ -420,7 +567,7 @@ async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
             detail=f"App '{slug}' not found",
         )
 
-    # Get users with access
+    # Get users with explicit access (external users granted access)
     access_stmt = (
         select(UserAppAccess, User)
         .join(User, UserAppAccess.user_id == User.id)
@@ -444,7 +591,6 @@ async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
         id=str(app.id),
         slug=app.slug,
         name=app.name,
-        is_public=app.is_public,
         description=app.description,
         app_url=app.app_url,
         roles=app.roles,
@@ -503,8 +649,6 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
 
     if request.name is not None:
         app.name = request.name
-    if request.is_public is not None:
-        app.is_public = request.is_public
     if request.description is not None:
         app.description = request.description
     if request.app_url is not None:
@@ -519,7 +663,6 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
         id=str(app.id),
         slug=app.slug,
         name=app.name,
-        is_public=app.is_public,
         description=app.description,
         app_url=app.app_url,
         roles=app.roles,
@@ -531,11 +674,11 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
     "/apps/{slug}/users",
     response_model=list[AppUserAccess],
     responses={
-        200: {"description": "Users with access"},
+        200: {"description": "Users with explicit access"},
         404: {"model": ErrorResponse, "description": "App not found"},
     },
     summary="List app users",
-    description="List all users with access to an app. Admin only.",
+    description="List all users with explicit access to an app (external users). Admin only.",
 )
 async def list_app_users(slug: str, admin: AdminUser, db: DbSession) -> list[AppUserAccess]:
     stmt = select(App).where(App.slug == slug)
@@ -577,7 +720,7 @@ async def list_app_users(slug: str, admin: AdminUser, db: DbSession) -> list[App
         400: {"model": ErrorResponse, "description": "User already has access"},
     },
     summary="Grant app access",
-    description="Grant a user access to an app with optional role. Admin only.",
+    description="Grant a user explicit access to an app with optional role. Admin only.",
 )
 async def grant_app_access(
     slug: str, request: GrantAccess, admin: AdminUser, db: DbSession
@@ -656,7 +799,7 @@ async def grant_app_access(
         404: {"model": ErrorResponse, "description": "App, user, or access not found"},
     },
     summary="Revoke app access",
-    description="Revoke a user's access to an app. Admin only.",
+    description="Revoke a user's explicit access to an app. Admin only.",
 )
 async def revoke_app_access(
     slug: str,
@@ -699,255 +842,13 @@ async def revoke_app_access(
     if not access:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User '{email}' does not have access to '{slug}'",
+            detail=f"User '{email}' does not have explicit access to '{slug}'",
         )
 
     await db.delete(access)
     await db.flush()
 
     return MessageResponse(message=f"Revoked access to '{slug}' for '{email}'")
-
-
-# ============================================================================
-# Access Request Management Endpoints
-# ============================================================================
-
-
-@router.get(
-    "/apps/{slug}/requests",
-    response_model=list[AccessRequestRead],
-    responses={
-        200: {"description": "Pending access requests"},
-        404: {"model": ErrorResponse, "description": "App not found"},
-    },
-    summary="List pending access requests",
-    description="List all pending access requests for an app. Admin only.",
-)
-async def list_access_requests(
-    slug: str,
-    admin: AdminUser,
-    db: DbSession,
-    status_filter: AccessRequestStatus | None = Query(None, description="Filter by status"),
-) -> list[AccessRequestRead]:
-    # Find app
-    app_stmt = select(App).where(App.slug == slug)
-    app_result = await db.execute(app_stmt)
-    app = app_result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
-
-    # Get requests
-    requests_stmt = (
-        select(AppAccessRequest, User)
-        .join(User, AppAccessRequest.user_id == User.id)
-        .where(AppAccessRequest.app_id == app.id)
-    )
-
-    if status_filter:
-        requests_stmt = requests_stmt.where(AppAccessRequest.status == status_filter)
-    else:
-        # By default, show pending requests
-        requests_stmt = requests_stmt.where(AppAccessRequest.status == AccessRequestStatus.PENDING)
-
-    requests_stmt = requests_stmt.order_by(AppAccessRequest.created_at.asc())
-    result = await db.execute(requests_stmt)
-    rows = result.all()
-
-    return [
-        AccessRequestRead(
-            id=str(req.id),
-            user_email=user.email,
-            user_name=user.name,
-            app_slug=app.slug,
-            app_name=app.name,
-            message=req.message,
-            status=req.status,
-            reviewed_by=req.reviewed_by,
-            reviewed_at=req.reviewed_at,
-            created_at=req.created_at,
-        )
-        for req, user in rows
-    ]
-
-
-@router.post(
-    "/apps/{slug}/requests/{request_id}/approve",
-    response_model=MessageResponse,
-    responses={
-        200: {"description": "Request approved and access granted"},
-        404: {"model": ErrorResponse, "description": "App or request not found"},
-        400: {"model": ErrorResponse, "description": "Request not pending"},
-    },
-    summary="Approve access request",
-    description="Approve a pending access request and grant access. Admin only.",
-)
-async def approve_access_request(
-    slug: str,
-    request_id: uuid.UUID,
-    admin: AdminUser,
-    db: DbSession,
-    data: AccessRequestReview | None = None,
-) -> MessageResponse:
-    # Find app
-    app_stmt = select(App).where(App.slug == slug)
-    app_result = await db.execute(app_stmt)
-    app = app_result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
-
-    # Find request
-    req_stmt = (
-        select(AppAccessRequest, User)
-        .join(User, AppAccessRequest.user_id == User.id)
-        .where(
-            AppAccessRequest.id == request_id,
-            AppAccessRequest.app_id == app.id,
-        )
-    )
-    req_result = await db.execute(req_stmt)
-    row = req_result.one_or_none()
-
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Access request not found",
-        )
-
-    access_request, user = row
-
-    if access_request.status != AccessRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Request is already {access_request.status.value}",
-        )
-
-    # Update request status
-    access_request.status = AccessRequestStatus.APPROVED
-    access_request.reviewed_by = admin.email
-    access_request.reviewed_at = datetime.now(UTC)
-
-    # Grant access
-    role = data.role if data else None
-    access = UserAppAccess(
-        user_id=user.id,
-        app_id=app.id,
-        role=role,
-        granted_by=admin.email,
-    )
-    db.add(access)
-    await db.flush()
-
-    role_msg = f" with role '{role}'" if role else ""
-    return MessageResponse(message=f"Approved access to '{slug}' for '{user.email}'{role_msg}")
-
-
-@router.post(
-    "/apps/{slug}/requests/{request_id}/reject",
-    response_model=MessageResponse,
-    responses={
-        200: {"description": "Request rejected"},
-        404: {"model": ErrorResponse, "description": "App or request not found"},
-        400: {"model": ErrorResponse, "description": "Request not pending"},
-    },
-    summary="Reject access request",
-    description="Reject a pending access request. Admin only.",
-)
-async def reject_access_request(
-    slug: str,
-    request_id: uuid.UUID,
-    admin: AdminUser,
-    db: DbSession,
-) -> MessageResponse:
-    # Find app
-    app_stmt = select(App).where(App.slug == slug)
-    app_result = await db.execute(app_stmt)
-    app = app_result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
-
-    # Find request
-    req_stmt = (
-        select(AppAccessRequest, User)
-        .join(User, AppAccessRequest.user_id == User.id)
-        .where(
-            AppAccessRequest.id == request_id,
-            AppAccessRequest.app_id == app.id,
-        )
-    )
-    req_result = await db.execute(req_stmt)
-    row = req_result.one_or_none()
-
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Access request not found",
-        )
-
-    access_request, user = row
-
-    if access_request.status != AccessRequestStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Request is already {access_request.status.value}",
-        )
-
-    # Update request status
-    access_request.status = AccessRequestStatus.REJECTED
-    access_request.reviewed_by = admin.email
-    access_request.reviewed_at = datetime.now(UTC)
-    await db.flush()
-
-    return MessageResponse(message=f"Rejected access request from '{user.email}' for '{slug}'")
-
-
-@router.get(
-    "/requests",
-    response_model=list[AccessRequestRead],
-    summary="List all pending access requests",
-    description="List all pending access requests across all apps. Admin only.",
-)
-async def list_all_access_requests(
-    admin: AdminUser,
-    db: DbSession,
-) -> list[AccessRequestRead]:
-    """Get all pending access requests across all apps, sorted by created_at ascending."""
-    requests_stmt = (
-        select(AppAccessRequest, User, App)
-        .join(User, AppAccessRequest.user_id == User.id)
-        .join(App, AppAccessRequest.app_id == App.id)
-        .where(AppAccessRequest.status == AccessRequestStatus.PENDING)
-        .order_by(AppAccessRequest.created_at.asc())
-    )
-    result = await db.execute(requests_stmt)
-    rows = result.all()
-
-    return [
-        AccessRequestRead(
-            id=str(req.id),
-            user_email=user.email,
-            user_name=user.name,
-            app_slug=app.slug,
-            app_name=app.name,
-            message=req.message,
-            status=req.status,
-            reviewed_by=req.reviewed_by,
-            reviewed_at=req.reviewed_at,
-            created_at=req.created_at,
-        )
-        for req, user, app in rows
-    ]
 
 
 @router.post(

@@ -7,7 +7,7 @@ export interface User {
   status: 'pending' | 'approved' | 'rejected';
   is_admin: boolean;
   is_seeded: boolean;
-  notify_private_app_requests: boolean;
+  is_internal: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -34,12 +34,24 @@ export interface PendingUsersResponse {
   total: number;
 }
 
+// Domain types
+export interface Domain {
+  id: string;
+  domain: string;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface DomainList {
+  domains: Domain[];
+  total: number;
+}
+
 // App types
 export interface App {
   id: string;
   slug: string;
   name: string;
-  is_public: boolean;
   description: string | null;
   app_url: string | null;
   roles: string;
@@ -76,19 +88,6 @@ export interface UserAppAccess {
   app_url: string | null;
   role: string | null;
   granted_at: string;
-}
-
-export interface AccessRequest {
-  id: string;
-  user_email: string;
-  user_name: string | null;
-  app_slug: string;
-  app_name: string;
-  message: string | null;
-  status: 'pending' | 'approved' | 'rejected';
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  created_at: string;
 }
 
 class ApiError extends Error {
@@ -155,7 +154,7 @@ export const api = {
 
     me: () => request<User>('/auth/me'),
 
-    updateProfile: (data: { name?: string; notify_private_app_requests?: boolean }) =>
+    updateProfile: (data: { name?: string }) =>
       request<User>('/auth/me', {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -167,16 +166,6 @@ export const api = {
       }),
 
     myApps: () => request<UserAppAccess[]>('/auth/me/apps'),
-
-    publicApps: () => request<AppPublic[]>('/auth/apps/public'),
-
-    privateApps: () => request<AppPublic[]>('/auth/apps/private'),
-
-    requestAppAccess: (slug: string, message?: string) =>
-      request<MessageResponse>(`/auth/me/apps/${slug}/request`, {
-        method: 'POST',
-        body: JSON.stringify({ message }),
-      }),
 
     passkeyRegisterOptions: () =>
       request<PublicKeyCredentialCreationOptions>('/auth/passkey/register/options', {
@@ -211,6 +200,21 @@ export const api = {
   },
 
   admin: {
+    // Domain management
+    listDomains: () => request<DomainList>('/admin/domains'),
+
+    addDomain: (domain: string) =>
+      request<Domain>('/admin/domains', {
+        method: 'POST',
+        body: JSON.stringify({ domain }),
+      }),
+
+    removeDomain: (domain: string) =>
+      request<MessageResponse>(`/admin/domains/${encodeURIComponent(domain)}`, {
+        method: 'DELETE',
+      }),
+
+    // User management
     listUsers: (page = 1, pageSize = 20, status?: string) => {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (status) params.set('status_filter', status);
@@ -251,13 +255,13 @@ export const api = {
     // App management
     listApps: () => request<AppList>('/admin/apps'),
 
-    createApp: (data: { slug: string; name: string; is_public?: boolean; description?: string; app_url?: string }) =>
+    createApp: (data: { slug: string; name: string; description?: string; app_url?: string }) =>
       request<App>('/admin/apps', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
 
-    updateApp: (slug: string, data: { name?: string; is_public?: boolean; description?: string; app_url?: string; roles?: string }) =>
+    updateApp: (slug: string, data: { name?: string; description?: string; app_url?: string; roles?: string }) =>
       request<App>(`/admin/apps/${slug}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -281,29 +285,11 @@ export const api = {
         method: 'DELETE',
       }),
 
-    listAccessRequests: (slug: string, status?: string) => {
-      const params = status ? `?status_filter=${status}` : '';
-      return request<AccessRequest[]>(`/admin/apps/${slug}/requests${params}`);
-    },
-
-    approveAccessRequest: (slug: string, requestId: string, role?: string) =>
-      request<MessageResponse>(`/admin/apps/${slug}/requests/${requestId}/approve`, {
-        method: 'POST',
-        body: JSON.stringify({ role }),
-      }),
-
-    rejectAccessRequest: (slug: string, requestId: string) =>
-      request<MessageResponse>(`/admin/apps/${slug}/requests/${requestId}/reject`, {
-        method: 'POST',
-      }),
-
     bulkGrantAccess: (data: { emails: string[]; app_slugs: string[]; role?: string }) =>
       request<MessageResponse>('/admin/users/grant-bulk', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-
-    listAllAccessRequests: () => request<AccessRequest[]>('/admin/requests'),
   },
 };
 

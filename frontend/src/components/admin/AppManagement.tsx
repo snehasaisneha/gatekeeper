@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { api, type App, type AppDetail, type AccessRequest, ApiError } from '@/lib/api';
+import { api, type App, type AppDetail, ApiError } from '@/lib/api';
 import {
   Loader2,
   Plus,
@@ -37,21 +37,18 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
   const [newName, setNewName] = React.useState('');
   const [newDescription, setNewDescription] = React.useState('');
   const [newAppUrl, setNewAppUrl] = React.useState('');
-  const [newIsPublic, setNewIsPublic] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
 
   // Expanded app details
   const [expandedApp, setExpandedApp] = React.useState<string | null>(null);
   const [appDetail, setAppDetail] = React.useState<AppDetail | null>(null);
-  const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
   const [isLoadingDetail, setIsLoadingDetail] = React.useState(false);
 
   // Edit app form
   const [editName, setEditName] = React.useState('');
   const [editDescription, setEditDescription] = React.useState('');
   const [editAppUrl, setEditAppUrl] = React.useState('');
-  const [editIsPublic, setEditIsPublic] = React.useState(false);
   const [editRoles, setEditRoles] = React.useState('admin,user');
   const [isSavingApp, setIsSavingApp] = React.useState(false);
   const [hasAppChanges, setHasAppChanges] = React.useState(false);
@@ -92,17 +89,12 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
   const loadAppDetail = async (slug: string) => {
     setIsLoadingDetail(true);
     try {
-      const [detail, requests] = await Promise.all([
-        api.admin.getApp(slug),
-        api.admin.listAccessRequests(slug, 'pending'),
-      ]);
+      const detail = await api.admin.getApp(slug);
       setAppDetail(detail);
-      setAccessRequests(requests);
       // Populate edit fields
       setEditName(detail.name);
       setEditDescription(detail.description || '');
       setEditAppUrl(detail.app_url || '');
-      setEditIsPublic(detail.is_public);
       setEditRoles(detail.roles || 'admin,user');
       setHasAppChanges(false);
     } catch (err) {
@@ -124,7 +116,6 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
         name: editName !== appDetail.name ? editName : undefined,
         description: editDescription !== (appDetail.description || '') ? editDescription : undefined,
         app_url: editAppUrl !== (appDetail.app_url || '') ? editAppUrl : undefined,
-        is_public: editIsPublic !== appDetail.is_public ? editIsPublic : undefined,
         roles: editRoles !== appDetail.roles ? editRoles : undefined,
       });
       // Update local state
@@ -147,16 +138,14 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
       editName !== appDetail.name ||
       editDescription !== (appDetail.description || '') ||
       editAppUrl !== (appDetail.app_url || '') ||
-      editIsPublic !== appDetail.is_public ||
       editRoles !== appDetail.roles;
     setHasAppChanges(changed);
-  }, [editName, editDescription, editAppUrl, editIsPublic, editRoles, appDetail]);
+  }, [editName, editDescription, editAppUrl, editRoles, appDetail]);
 
   const handleToggleExpand = async (slug: string) => {
     if (expandedApp === slug) {
       setExpandedApp(null);
       setAppDetail(null);
-      setAccessRequests([]);
     } else {
       setExpandedApp(slug);
       await loadAppDetail(slug);
@@ -174,13 +163,11 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
         name: newName,
         description: newDescription || undefined,
         app_url: newAppUrl || undefined,
-        is_public: newIsPublic,
       });
       setNewSlug('');
       setNewName('');
       setNewDescription('');
       setNewAppUrl('');
-      setNewIsPublic(false);
       setShowCreateForm(false);
       await loadApps();
       onRefresh?.();
@@ -278,40 +265,6 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
     setEditUserRoleValue(currentRole || '');
   };
 
-  const handleApproveRequest = async (requestId: string) => {
-    if (!expandedApp) return;
-
-    setActionLoading(`approve-${requestId}`);
-    try {
-      await api.admin.approveAccessRequest(expandedApp, requestId);
-      await loadAppDetail(expandedApp);
-      onRefresh?.();
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleRejectRequest = async (requestId: string) => {
-    if (!expandedApp) return;
-
-    setActionLoading(`reject-${requestId}`);
-    try {
-      await api.admin.rejectAccessRequest(expandedApp, requestId);
-      await loadAppDetail(expandedApp);
-      onRefresh?.();
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -394,16 +347,6 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                 />
                 <p className="text-xs text-muted-foreground">Direct link to the app for users</p>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="app-is-public"
-                  checked={newIsPublic}
-                  onChange={(e) => setNewIsPublic(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <Label htmlFor="app-is-public">Make publicly visible (users can discover and request access)</Label>
-              </div>
               <div className="flex gap-2">
                 <Button type="submit" disabled={isCreating}>
                   {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -433,12 +376,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                 <div className="flex items-center gap-3">
                   <AppWindow className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{app.name}</p>
-                      {app.is_public && (
-                        <Badge variant="secondary" className="text-xs">Public</Badge>
-                      )}
-                    </div>
+                    <p className="font-medium">{app.name}</p>
                     <p className="text-sm text-muted-foreground">{app.slug}</p>
                     {app.description && (
                       <p className="text-sm text-muted-foreground line-clamp-1">{app.description}</p>
@@ -526,20 +464,8 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                             <p className="text-xs text-muted-foreground">Comma-separated list of roles</p>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`edit-public-${app.slug}`}
-                              checked={editIsPublic}
-                              onChange={(e) => setEditIsPublic(e.target.checked)}
-                              className="h-4 w-4"
-                            />
-                            <Label htmlFor={`edit-public-${app.slug}`}>
-                              Public (users can discover and request access)
-                            </Label>
-                          </div>
-                          {hasAppChanges && (
+                        {hasAppChanges && (
+                          <div className="flex justify-end">
                             <Button
                               size="sm"
                               onClick={handleSaveAppChanges}
@@ -548,71 +474,21 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                               {isSavingApp && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                               Save Changes
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Pending Access Requests */}
-                      {accessRequests.length > 0 && (
-                        <div>
-                          <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                            <Badge variant="warning">{accessRequests.length}</Badge>
-                            Pending Access Requests
-                          </h4>
-                          <div className="space-y-2">
-                            {accessRequests.map((request) => (
-                              <div
-                                key={request.id}
-                                className="flex items-center justify-between p-2 bg-background rounded border"
-                              >
-                                <div>
-                                  <p className="font-medium">{request.user_email}</p>
-                                  {request.message && (
-                                    <p className="text-sm text-muted-foreground">"{request.message}"</p>
-                                  )}
-                                </div>
-                                <div className="flex gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleApproveRequest(request.id)}
-                                    disabled={actionLoading === `approve-${request.id}`}
-                                    className="text-green-600 hover:text-green-600"
-                                  >
-                                    {actionLoading === `approve-${request.id}` ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Check className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleRejectRequest(request.id)}
-                                    disabled={actionLoading === `reject-${request.id}`}
-                                    className="text-destructive hover:text-destructive"
-                                  >
-                                    {actionLoading === `reject-${request.id}` ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <X className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Users with Access */}
+                      {/* Users with Access (external users with explicit grants) */}
                       <div>
-                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                        <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
                           <Users className="h-4 w-4" />
                           Users with Access ({appDetail?.users.length || 0})
                         </h4>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          External users with explicit access grants. Internal users automatically have access to all apps.
+                        </p>
                         {!appDetail?.users.length ? (
-                          <p className="text-sm text-muted-foreground">No users have access yet.</p>
+                          <p className="text-sm text-muted-foreground">No external users have explicit access grants.</p>
                         ) : (
                           <div className="rounded-md border">
                             <table className="w-full text-sm">

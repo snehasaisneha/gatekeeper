@@ -117,6 +117,7 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="h-12 px-4 text-left align-middle font-medium">Email</th>
+              <th className="h-12 px-4 text-left align-middle font-medium">Type</th>
               <th className="h-12 px-4 text-left align-middle font-medium">Status</th>
               <th className="h-12 px-4 text-left align-middle font-medium">Role</th>
               <th className="h-12 px-4 text-left align-middle font-medium">Created</th>
@@ -127,6 +128,13 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
             {users.map((user) => (
               <tr key={user.id} className="border-b">
                 <td className="p-4 align-middle">{user.email}</td>
+                <td className="p-4 align-middle">
+                  {user.is_internal ? (
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Internal</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">External</Badge>
+                  )}
+                </td>
                 <td className="p-4 align-middle">{getStatusBadge(user.status)}</td>
                 <td className="p-4 align-middle">
                   {user.is_admin ? (

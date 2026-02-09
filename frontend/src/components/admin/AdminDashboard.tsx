@@ -1,16 +1,16 @@
 import * as React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserList } from './UserList';
 import { PendingRegistrations } from './PendingRegistrations';
 import { AppManagement } from './AppManagement';
 import { AddUserModal } from './AddUserModal';
-import { ApprovalsTab } from './ApprovalsTab';
+import { DomainManagement } from './DomainManagement';
 import { api } from '@/lib/api';
-import { UserPlus, AppWindow, Users, Clock, CheckCircle } from 'lucide-react';
+import { UserPlus, AppWindow, Users, Clock, Globe } from 'lucide-react';
 
-type TabType = 'users' | 'apps' | 'approvals';
+type TabType = 'users' | 'apps' | 'domains';
 
 export function AdminDashboard() {
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -21,21 +21,21 @@ export function AdminDashboard() {
   const [pendingCount, setPendingCount] = React.useState(0);
   const [totalUsers, setTotalUsers] = React.useState(0);
   const [totalApps, setTotalApps] = React.useState(0);
-  const [pendingAccessRequests, setPendingAccessRequests] = React.useState(0);
+  const [totalDomains, setTotalDomains] = React.useState(0);
 
   React.useEffect(() => {
     async function fetchStats() {
       try {
-        const [pendingRes, usersRes, appsRes, accessRequestsRes] = await Promise.all([
+        const [pendingRes, usersRes, appsRes, domainsRes] = await Promise.all([
           api.admin.listPendingUsers(),
           api.admin.listUsers(1, 1),
           api.admin.listApps(),
-          api.admin.listAllAccessRequests(),
+          api.admin.listDomains(),
         ]);
         setPendingCount(pendingRes.total);
         setTotalUsers(usersRes.total);
         setTotalApps(appsRes.total);
-        setPendingAccessRequests(accessRequestsRes.length);
+        setTotalDomains(domainsRes.total);
       } catch {
         // Silently fail
       }
@@ -101,17 +101,14 @@ export function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card
-          className={`cursor-pointer hover:border-primary/50 transition-colors ${pendingAccessRequests > 0 ? 'border-blue-500/50' : ''}`}
-          onClick={() => setActiveTab('approvals')}
-        >
+        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab('domains')}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Access Requests</p>
-                <p className="text-2xl font-bold">{pendingAccessRequests}</p>
+                <p className="text-sm text-muted-foreground">Approved Domains</p>
+                <p className="text-2xl font-bold">{totalDomains}</p>
               </div>
-              <CheckCircle className={`h-8 w-8 ${pendingAccessRequests > 0 ? 'text-blue-500' : 'text-muted-foreground/50'}`} />
+              <Globe className="h-8 w-8 text-muted-foreground/50" />
             </div>
           </CardContent>
         </Card>
@@ -148,20 +145,15 @@ export function AdminDashboard() {
             Apps
           </button>
           <button
-            onClick={() => setActiveTab('approvals')}
+            onClick={() => setActiveTab('domains')}
             className={`flex items-center gap-2 px-4 py-2 border-b-2 transition-colors ${
-              activeTab === 'approvals'
+              activeTab === 'domains'
                 ? 'border-primary text-foreground font-medium'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            <CheckCircle className="h-4 w-4" />
-            Approvals
-            {pendingAccessRequests > 0 && (
-              <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-xs">
-                {pendingAccessRequests}
-              </Badge>
-            )}
+            <Globe className="h-4 w-4" />
+            Domains
           </button>
         </div>
 
@@ -198,9 +190,9 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {activeTab === 'approvals' && (
+      {activeTab === 'domains' && (
         <div>
-          <ApprovalsTab onRefresh={handleRefresh} />
+          <DomainManagement onRefresh={handleRefresh} />
         </div>
       )}
     </div>

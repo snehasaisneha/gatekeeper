@@ -2,7 +2,6 @@ import * as React from 'react';
 import { AuthProvider, useRequireAuth } from './AuthContext';
 import { TopBar } from './TopBar';
 import { AppCard } from './AppCard';
-import { PrivateAppsList } from './PrivateAppsList';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { UserAppAccess } from '@/lib/api';
@@ -55,6 +54,9 @@ function HomePageContent({ appName }: HomePageProps) {
             <h1 className="text-3xl font-bold">Welcome back!</h1>
             <p className="text-muted-foreground mt-1">
               Signed in as {user.email}
+              {user.is_internal && (
+                <span className="ml-2 text-sm text-green-600">(Internal)</span>
+              )}
             </p>
           </div>
 
@@ -68,7 +70,7 @@ function HomePageContent({ appName }: HomePageProps) {
             ) : apps.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/30">
                 <p>You don't have access to any apps yet.</p>
-                <p className="text-sm mt-1">Request access to private apps below.</p>
+                <p className="text-sm mt-1">Contact an administrator for access.</p>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -83,12 +85,6 @@ function HomePageContent({ appName }: HomePageProps) {
                 ))}
               </div>
             )}
-          </section>
-
-          {/* Request Access Section */}
-          <section>
-            <h2 className="text-xl font-semibold mb-4">Request Access</h2>
-            <PrivateAppsList />
           </section>
         </div>
       </main>
