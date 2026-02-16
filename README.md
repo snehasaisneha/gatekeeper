@@ -2,6 +2,9 @@
 
 Lightweight, self-hosted auth gateway for internal tools. Email OTP + Passkeys. Multi-app SSO. Protect any app behind nginx. No vendor lock-in, no per-user pricing, full data control.
 
+© 2025 Sai Sneha · [AGPL-3.0-or-later](LICENSE)
+Gatekeeper is free to use, modify, and self-host, in perpetuity. Source sharing is only required if you offer a modified version of Gatekeeper as a public service.
+
 ## Why Gatekeeper?
 
 You have internal tools — docs, dashboards, Jupyter notebooks, admin panels. You need auth, but:
@@ -125,11 +128,3 @@ See [`deployment/README.md`](deployment/README.md) for full guide.
 - Multi-tenant SaaS (customer-facing auth)
 - Existing Google Workspace/Okta SSO you want to use
 
-## License & Copyright
-
-Gatekeeper - A lightweight, self-hosted authentication gateway
-Copyright (C) 2025 Sai Sneha
-
-Gatekeeper is licensed under AGPL-3.0-or-later. Read more in the [LICENSE](LICENSE) file.
-
-You are perpetually free to use, modify, and deploy the platform internally, with no obligations. Source-sharing is only required if you offer a modified version as a public service.
