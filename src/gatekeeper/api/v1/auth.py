@@ -13,6 +13,7 @@ from sqlalchemy import select
 from gatekeeper.api.deps import CurrentUser, CurrentUserOptional, DbSession
 from gatekeeper.config import get_settings
 from gatekeeper.models.app import App, UserAppAccess
+from gatekeeper.models.branding import Branding
 from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.user import User, UserStatus
@@ -30,6 +31,7 @@ from gatekeeper.schemas.auth import (
     UserAppAccessInfo,
     UserResponse,
 )
+from gatekeeper.schemas.branding import BrandingRead
 from gatekeeper.services.audit import AuditService
 from gatekeeper.services.email import EmailService
 from gatekeeper.services.otp import OTPService
@@ -1183,3 +1185,34 @@ async def oauth_providers() -> dict[str, bool]:
         "google": settings.google_oauth_enabled,
         "github": settings.github_oauth_enabled,
     }
+
+
+@router.get(
+    "/branding",
+    response_model=BrandingRead,
+    summary="Get branding settings",
+    description="Public endpoint for logo URLs and accent color (no auth required).",
+)
+async def get_public_branding(db: DbSession) -> BrandingRead:
+    """Get branding settings for public use (sign-in page, favicon, etc.)."""
+    stmt = select(Branding).where(Branding.id == 1)
+    result = await db.execute(stmt)
+    branding = result.scalar_one_or_none()
+
+    if not branding:
+        # Return defaults if no branding configured
+        return BrandingRead(
+            logo_url=None,
+            logo_square_url=None,
+            favicon_url=None,
+            accent_color="ink",
+            accent_hex="#000000",
+        )
+
+    return BrandingRead(
+        logo_url=branding.logo_url,
+        logo_square_url=branding.logo_square_url,
+        favicon_url=branding.favicon_url,
+        accent_color=branding.accent_color,
+        accent_hex=branding.accent_hex,
+    )

@@ -12,8 +12,9 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" id="favicon" />
     <meta name="generator" content={Astro.generator} />
+    <meta name="app-name" content={appName} />
     <title>{title} | {appName}</title>
   </head>
   <body class="min-h-screen bg-background font-sans antialiased">
@@ -24,3 +25,48 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
 <style is:global>
   @import '../styles/globals.css';
 </style>
+
+<script>
+  // Fetch branding and apply styles
+  async function applyBranding() {
+    try {
+      const response = await fetch('/api/v1/auth/branding');
+      if (!response.ok) return;
+
+      const branding = await response.json();
+
+      // Apply accent color
+      if (branding.accent_hex) {
+        document.documentElement.style.setProperty('--accent-color', branding.accent_hex);
+      }
+
+      // Apply favicon
+      if (branding.favicon_url) {
+        const favicon = document.getElementById('favicon');
+        if (favicon) {
+          favicon.setAttribute('href', branding.favicon_url);
+        }
+      }
+
+      // Store branding for React components
+      (window as any).__BRANDING__ = branding;
+
+      // Update logo links if logo_url is set
+      const logoLinks = document.querySelectorAll('[data-logo="full"]');
+      logoLinks.forEach((el) => {
+        if (branding.logo_url) {
+          const img = document.createElement('img');
+          img.src = branding.logo_url;
+          img.alt = document.querySelector('meta[name="app-name"]')?.getAttribute('content') || 'Logo';
+          img.className = 'h-8';
+          el.innerHTML = '';
+          el.appendChild(img);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to fetch branding:', error);
+    }
+  }
+
+  applyBranding();
+</script>

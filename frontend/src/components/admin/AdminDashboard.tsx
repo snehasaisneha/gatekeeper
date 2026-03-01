@@ -7,10 +7,11 @@ import { PendingRegistrations } from './PendingRegistrations';
 import { AppManagement } from './AppManagement';
 import { AddUserModal } from './AddUserModal';
 import { DomainManagement } from './DomainManagement';
+import { BrandingSettings } from './BrandingSettings';
 import { api } from '@/lib/api';
-import { UserPlus, AppWindow, Users, Clock, Globe } from 'lucide-react';
+import { UserPlus, AppWindow, Users, Clock, Globe, Palette } from 'lucide-react';
 
-type TabType = 'users' | 'apps' | 'domains';
+type TabType = 'users' | 'apps' | 'domains' | 'branding';
 
 export function AdminDashboard() {
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -155,6 +156,17 @@ export function AdminDashboard() {
             <Globe className="h-4 w-4" />
             Domains
           </button>
+          <button
+            onClick={() => setActiveTab('branding')}
+            className={`flex items-center gap-2 px-4 py-2 border-b-2 transition-colors ${
+              activeTab === 'branding'
+                ? 'border-primary text-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Palette className="h-4 w-4" />
+            Branding
+          </button>
         </div>
 
         {activeTab === 'users' && (
@@ -193,6 +205,12 @@ export function AdminDashboard() {
       {activeTab === 'domains' && (
         <div>
           <DomainManagement onRefresh={handleRefresh} />
+        </div>
+      )}
+
+      {activeTab === 'branding' && (
+        <div>
+          <BrandingSettings onRefresh={handleRefresh} />
         </div>
       )}
     </div>

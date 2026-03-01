@@ -8,9 +8,9 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
 <Layout title="Sign In">
   <div class="min-h-screen bg-white flex flex-col">
     <!-- Header -->
-    <header class="border-b-4 border-black">
+    <header class="border-b-4" style="border-color: var(--accent-color);">
       <div class="container mx-auto px-6 py-4">
-        <a href="/" class="text-2xl font-bold uppercase tracking-wider hover:bg-black hover:text-white transition-colors px-2 -mx-2">
+        <a href="/" data-logo="full" class="text-2xl font-bold uppercase tracking-wider hover:opacity-70 transition-opacity px-2 -mx-2" style="color: var(--accent-color);">
           {appName}
         </a>
       </div>
@@ -20,9 +20,9 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
     <main class="flex-1 flex items-center justify-center p-6">
       <div class="w-full max-w-md">
         <!-- Card -->
-        <div class="border-4 border-black bg-white shadow-brutal-lg">
+        <div class="border-4 bg-white shadow-brutal-lg" style="border-color: var(--accent-color);">
           <!-- Card Header -->
-          <div class="border-b-4 border-black bg-black text-white p-6">
+          <div class="border-b-4 text-white p-6" style="border-color: var(--accent-color); background-color: var(--accent-color);">
             <h1 class="text-2xl font-bold uppercase tracking-wider">Sign In</h1>
             <p id="signin-description" class="text-gray-300 mt-1 text-sm">
               Enter your credentials to continue

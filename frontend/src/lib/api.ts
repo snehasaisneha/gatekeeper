@@ -91,6 +91,27 @@ export interface UserAppAccess {
   granted_at: string;
 }
 
+// Branding types
+export type AccentColor = 'ink' | 'charcoal' | 'navy' | 'forest' | 'amber' | 'plum' | 'sage';
+
+export interface Branding {
+  logo_url: string | null;
+  logo_square_url: string | null;
+  favicon_url: string | null;
+  accent_color: AccentColor;
+  accent_hex: string;
+}
+
+export interface BrandingAdmin extends Branding {
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface AccentPreset {
+  name: string;
+  hex: string;
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -204,6 +225,8 @@ export const api = {
       request<MessageResponse>(`/auth/passkeys/${id}`, {
         method: 'DELETE',
       }),
+
+    branding: () => request<Branding>('/auth/branding'),
   },
 
   admin: {
@@ -297,6 +320,22 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+
+    // Branding
+    getBranding: () => request<BrandingAdmin>('/admin/branding'),
+
+    updateBranding: (data: {
+      logo_url?: string | null;
+      logo_square_url?: string | null;
+      favicon_url?: string | null;
+      accent_color?: AccentColor;
+    }) =>
+      request<BrandingAdmin>('/admin/branding', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+
+    getAccentPresets: () => request<{ presets: AccentPreset[] }>('/admin/branding/presets'),
   },
 };
 

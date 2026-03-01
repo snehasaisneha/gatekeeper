@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gatekeeper.api.deps import AdminUser, DbSession
 from gatekeeper.models.app import App, UserAppAccess
 from gatekeeper.models.audit import AuditLog
+from gatekeeper.models.branding import Branding
 from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.schemas.admin import AdminCreateUser, AdminUpdateUser, PendingUserList, UserList
@@ -24,6 +25,11 @@ from gatekeeper.schemas.app import (
 )
 from gatekeeper.schemas.audit import AuditLogList, AuditLogRead
 from gatekeeper.schemas.auth import ErrorResponse, MessageResponse
+from gatekeeper.schemas.branding import (
+    AccentPresetsResponse,
+    BrandingReadAdmin,
+    BrandingUpdate,
+)
 from gatekeeper.schemas.domain import DomainCreate, DomainList, DomainRead
 from gatekeeper.schemas.user import UserRead
 from gatekeeper.services.email import EmailService
@@ -1005,3 +1011,89 @@ async def list_audit_logs(
         page=page,
         page_size=page_size,
     )
+
+
+# ============================================================================
+# Branding Endpoints
+# ============================================================================
+
+
+async def _get_or_create_branding(db: AsyncSession) -> Branding:
+    """Get the branding record, creating it if it doesn't exist."""
+    stmt = select(Branding).where(Branding.id == 1)
+    result = await db.execute(stmt)
+    branding = result.scalar_one_or_none()
+
+    if not branding:
+        branding = Branding(id=1, accent_color="ink")
+        db.add(branding)
+        await db.flush()
+        await db.refresh(branding)
+
+    return branding
+
+
+@router.get(
+    "/branding",
+    response_model=BrandingReadAdmin,
+    summary="Get branding settings",
+    description="Get current branding settings including metadata. Admin only.",
+)
+async def get_branding(admin: AdminUser, db: DbSession) -> BrandingReadAdmin:
+    branding = await _get_or_create_branding(db)
+    return BrandingReadAdmin(
+        logo_url=branding.logo_url,
+        logo_square_url=branding.logo_square_url,
+        favicon_url=branding.favicon_url,
+        accent_color=branding.accent_color,
+        accent_hex=branding.accent_hex,
+        updated_at=branding.updated_at,
+        updated_by=branding.updated_by,
+    )
+
+
+@router.put(
+    "/branding",
+    response_model=BrandingReadAdmin,
+    summary="Update branding settings",
+    description="Update logo URLs and accent color. Admin only.",
+)
+async def update_branding(
+    request: BrandingUpdate, admin: AdminUser, db: DbSession
+) -> BrandingReadAdmin:
+    branding = await _get_or_create_branding(db)
+
+    if request.logo_url is not None:
+        branding.logo_url = str(request.logo_url) if request.logo_url else None
+    if request.logo_square_url is not None:
+        branding.logo_square_url = str(request.logo_square_url) if request.logo_square_url else None
+    if request.favicon_url is not None:
+        branding.favicon_url = str(request.favicon_url) if request.favicon_url else None
+    if request.accent_color is not None:
+        branding.accent_color = request.accent_color
+
+    branding.updated_at = datetime.utcnow()
+    branding.updated_by = admin.email
+
+    await db.flush()
+    await db.refresh(branding)
+
+    return BrandingReadAdmin(
+        logo_url=branding.logo_url,
+        logo_square_url=branding.logo_square_url,
+        favicon_url=branding.favicon_url,
+        accent_color=branding.accent_color,
+        accent_hex=branding.accent_hex,
+        updated_at=branding.updated_at,
+        updated_by=branding.updated_by,
+    )
+
+
+@router.get(
+    "/branding/presets",
+    response_model=AccentPresetsResponse,
+    summary="Get accent color presets",
+    description="Get available accent color presets. Admin only.",
+)
+async def get_accent_presets(admin: AdminUser) -> AccentPresetsResponse:
+    return AccentPresetsResponse.from_presets()
