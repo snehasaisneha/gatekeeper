@@ -1063,12 +1063,13 @@ async def update_branding(
 ) -> BrandingReadAdmin:
     branding = await _get_or_create_branding(db)
 
+    # Handle URL fields: empty string means clear, None means don't change
     if request.logo_url is not None:
-        branding.logo_url = str(request.logo_url) if request.logo_url else None
+        branding.logo_url = request.logo_url if request.logo_url else None
     if request.logo_square_url is not None:
-        branding.logo_square_url = str(request.logo_square_url) if request.logo_square_url else None
+        branding.logo_square_url = request.logo_square_url if request.logo_square_url else None
     if request.favicon_url is not None:
-        branding.favicon_url = str(request.favicon_url) if request.favicon_url else None
+        branding.favicon_url = request.favicon_url if request.favicon_url else None
     if request.accent_color is not None:
         branding.accent_color = request.accent_color
 

@@ -57,10 +57,12 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
     setSuccess(false);
 
     try {
+      // Send empty string to clear, actual URL to set
+      // The backend will interpret empty string as "clear this field"
       const updated = await api.admin.updateBranding({
-        logo_url: logoUrl || null,
-        logo_square_url: logoSquareUrl || null,
-        favicon_url: faviconUrl || null,
+        logo_url: logoUrl,
+        logo_square_url: logoSquareUrl,
+        favicon_url: faviconUrl,
         accent_color: accentColor,
       });
       setBranding(updated);

@@ -34,6 +34,7 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
       if (!response.ok) return;
 
       const branding = await response.json();
+      const appName = document.querySelector('meta[name="app-name"]')?.getAttribute('content') || 'Gatekeeper';
 
       // Apply accent color
       if (branding.accent_hex) {
@@ -51,22 +52,29 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
       // Store branding for React components
       (window as any).__BRANDING__ = branding;
 
-      // Update logo links if logo_url is set
+      // Update logo elements
       const logoLinks = document.querySelectorAll('[data-logo="full"]');
       logoLinks.forEach((el) => {
         if (branding.logo_url) {
+          // Show logo image
           const img = document.createElement('img');
           img.src = branding.logo_url;
-          img.alt = document.querySelector('meta[name="app-name"]')?.getAttribute('content') || 'Logo';
+          img.alt = appName;
           img.className = 'h-8';
           el.innerHTML = '';
           el.appendChild(img);
         }
+        // If no logo_url, keep the text fallback (already in HTML)
       });
     } catch (error) {
       console.error('Failed to fetch branding:', error);
     }
   }
 
-  applyBranding();
+  // Run when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyBranding);
+  } else {
+    applyBranding();
+  }
 </script>

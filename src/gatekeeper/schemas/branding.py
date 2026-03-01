@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, field_validator
 
 from gatekeeper.models.branding import ACCENT_PRESETS
 
@@ -24,12 +24,26 @@ class BrandingRead(BaseModel):
 
 
 class BrandingUpdate(BaseModel):
-    """Request to update branding settings."""
+    """Request to update branding settings.
 
-    logo_url: HttpUrl | None = None
-    logo_square_url: HttpUrl | None = None
-    favicon_url: HttpUrl | None = None
+    For URL fields, send:
+    - A valid URL string to set
+    - Empty string "" to clear
+    - Omit the field to leave unchanged
+    """
+
+    logo_url: str | None = None
+    logo_square_url: str | None = None
+    favicon_url: str | None = None
     accent_color: AccentColor | None = None
+
+    @field_validator("logo_url", "logo_square_url", "favicon_url", mode="before")
+    @classmethod
+    def empty_string_to_empty(cls, v: str | None) -> str | None:
+        """Allow empty strings (to clear) but keep them as empty strings."""
+        if v == "":
+            return ""  # Keep empty string to signal "clear"
+        return v
 
 
 class BrandingReadAdmin(BrandingRead):
