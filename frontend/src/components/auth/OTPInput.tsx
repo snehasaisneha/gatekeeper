@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 interface OTPInputProps {
@@ -80,7 +79,7 @@ export function OTPInput({ value, onChange, onComplete, disabled, className }: O
   return (
     <div className={cn('flex gap-2 justify-center', className)}>
       {Array.from({ length: 6 }).map((_, index) => (
-        <Input
+        <input
           key={index}
           ref={(el) => {
             inputRefs.current[index] = el;
@@ -93,7 +92,7 @@ export function OTPInput({ value, onChange, onComplete, disabled, className }: O
           onKeyDown={(e) => handleKeyDown(index, e)}
           onPaste={handlePaste}
           disabled={disabled}
-          className="w-12 h-12 text-center text-lg font-semibold"
+          className="w-12 h-14 text-center text-2xl font-bold border-4 border-black bg-white focus:outline-none focus:bg-yellow-100 transition-colors disabled:opacity-50"
           autoComplete="one-time-code"
         />
       ))}

@@ -123,18 +123,6 @@ async function request<T>(
 
 export const api = {
   auth: {
-    register: (email: string) =>
-      request<MessageResponse>('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      }),
-
-    registerVerify: (email: string, code: string) =>
-      request<AuthResponse>('/auth/register/verify', {
-        method: 'POST',
-        body: JSON.stringify({ email, code }),
-      }),
-
     signin: (email: string) =>
       request<MessageResponse>('/auth/signin', {
         method: 'POST',
@@ -146,6 +134,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ email, code }),
       }),
+
+    googleEnabled: () => request<{ enabled: boolean }>('/auth/google/enabled'),
+
+    getGoogleLoginUrl: (redirect?: string) => {
+      const params = new URLSearchParams();
+      if (redirect) params.set('redirect', redirect);
+      return `${API_BASE}/auth/google/login${params.toString() ? '?' + params.toString() : ''}`;
+    },
 
     signout: () =>
       request<MessageResponse>('/auth/signout', {

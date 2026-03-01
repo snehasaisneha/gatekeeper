@@ -10,129 +10,8 @@ from gatekeeper.models.user import UserStatus
 from .conftest import create_test_otp, create_test_user, get_latest_otp
 
 
-class TestRegistration:
-    """Tests for the registration flow."""
-
-    async def test_register_sends_otp(self, client: AsyncClient, db_session):
-        """Test that registration sends an OTP to a new email."""
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "newuser@test.com"},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["message"] == "Verification code sent"
-
-        # Verify OTP was created in database
-        otp = await get_latest_otp(db_session, "newuser@test.com", OTPPurpose.REGISTER)
-        assert otp is not None
-        assert len(otp) == 6
-
-    async def test_register_existing_approved_user_fails(self, client: AsyncClient, db_session):
-        """Test that registration fails for an already approved user."""
-        await create_test_user(db_session, "existing@test.com", UserStatus.APPROVED)
-
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "existing@test.com"},
-        )
-
-        assert response.status_code == 400
-        assert "already registered" in response.json()["detail"].lower()
-
-    async def test_register_existing_pending_user_fails(self, client: AsyncClient, db_session):
-        """Test that registration fails for a pending user."""
-        await create_test_user(db_session, "pending@test.com", UserStatus.PENDING)
-
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "pending@test.com"},
-        )
-
-        assert response.status_code == 400
-        assert "pending" in response.json()["detail"].lower()
-
-    async def test_register_verify_auto_approval(self, client: AsyncClient, db_session):
-        """Test that users from accepted domains are auto-approved."""
-        # approved-domain.com is in the test settings' accepted_domains
-        email = "autouser@approved-domain.com"
-
-        # Start registration
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": email},
-        )
-        assert response.status_code == 200
-
-        # Get OTP from database
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
-        assert otp is not None
-
-        # Verify registration
-        response = await client.post(
-            "/api/v1/auth/register/verify",
-            json={"email": email, "code": otp},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["message"] == "Registration successful"
-        assert data["user"] is not None
-        assert data["user"]["email"] == email
-        # Should get a session cookie
-        assert "session" in response.cookies
-
-    async def test_register_verify_pending_approval(self, client: AsyncClient, db_session):
-        """Test that users from non-accepted domains require approval."""
-        email = "pendinguser@unknown-domain.com"
-
-        # Start registration
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": email},
-        )
-        assert response.status_code == 200
-
-        # Get OTP from database
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
-        assert otp is not None
-
-        # Verify registration
-        response = await client.post(
-            "/api/v1/auth/register/verify",
-            json={"email": email, "code": otp},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "pending" in data["message"].lower()
-        assert data["user"] is None
-        # Should NOT get a session cookie
-        assert "session" not in response.cookies
-
-    async def test_register_verify_invalid_otp(self, client: AsyncClient, db_session):
-        """Test that invalid OTP is rejected."""
-        email = "newuser2@test.com"
-
-        # Start registration
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": email},
-        )
-
-        # Try to verify with wrong code
-        response = await client.post(
-            "/api/v1/auth/register/verify",
-            json={"email": email, "code": "000000"},
-        )
-
-        assert response.status_code == 400
-        assert "invalid" in response.json()["detail"].lower()
-
-
 class TestSignIn:
-    """Tests for the sign-in flow."""
+    """Tests for the sign-in flow (which now handles registration automatically)."""
 
     async def test_signin_approved_user(self, client: AsyncClient, db_session):
         """Test sign-in flow for an approved user."""
@@ -162,27 +41,90 @@ class TestSignIn:
         assert data["user"]["email"] == "signinuser@test.com"
         assert "session" in response.cookies
 
-    async def test_signin_nonexistent_user_fails(self, client: AsyncClient):
-        """Test that sign-in fails for non-existent user."""
+    async def test_signin_auto_creates_user_from_approved_domain(
+        self, client: AsyncClient, db_session
+    ):
+        """Test that sign-in auto-creates and approves users from approved domains."""
+        email = "newuser@approved-domain.com"
+
+        # Start sign-in (user doesn't exist yet)
         response = await client.post(
             "/api/v1/auth/signin",
-            json={"email": "nonexistent@test.com"},
+            json={"email": email},
+        )
+        assert response.status_code == 200
+
+        # Get OTP
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
+        assert otp is not None
+
+        # Verify sign-in
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": email, "code": otp},
         )
 
-        assert response.status_code == 400
-        assert "no account" in response.json()["detail"].lower()
+        assert response.status_code == 200
+        data = response.json()
+        assert data["user"] is not None
+        assert data["user"]["email"] == email
+        assert "session" in response.cookies
 
-    async def test_signin_pending_user_fails(self, client: AsyncClient, db_session):
-        """Test that sign-in fails for pending users."""
+    async def test_signin_auto_creates_pending_user_from_unknown_domain(
+        self, client: AsyncClient, db_session
+    ):
+        """Test that sign-in auto-creates pending users from non-approved domains."""
+        email = "newuser@unknown-domain.com"
+
+        # Start sign-in (user doesn't exist yet)
+        response = await client.post(
+            "/api/v1/auth/signin",
+            json={"email": email},
+        )
+        assert response.status_code == 200
+
+        # Get OTP
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
+        assert otp is not None
+
+        # Verify sign-in
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": email, "code": otp},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Pending users don't get a user object or session
+        assert data["user"] is None
+        assert "pending" in data["message"].lower()
+        assert "session" not in response.cookies
+
+    async def test_signin_pending_user_sends_otp(self, client: AsyncClient, db_session):
+        """Test that pending users can verify their email (but remain pending)."""
         await create_test_user(db_session, "pendingsignin@test.com", UserStatus.PENDING)
 
+        # Pending users should be able to get an OTP
         response = await client.post(
             "/api/v1/auth/signin",
             json={"email": "pendingsignin@test.com"},
         )
+        assert response.status_code == 200
 
-        assert response.status_code == 400
-        assert "pending" in response.json()["detail"].lower()
+        # Get OTP
+        otp = await get_latest_otp(db_session, "pendingsignin@test.com", OTPPurpose.SIGNIN)
+        assert otp is not None
+
+        # Verify - should return pending status
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": "pendingsignin@test.com", "code": otp},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["user"] is None
+        assert "pending" in data["message"].lower()
 
     async def test_signin_rejected_user_fails(self, client: AsyncClient, db_session):
         """Test that sign-in fails for rejected users."""
@@ -271,23 +213,23 @@ class TestAuthenticatedEndpoints:
 
     async def test_me_with_auth_succeeds(self, client: AsyncClient, db_session):
         """Test that /me succeeds with valid session."""
-        # Create user and sign in
+        # Create user and sign in (using approved domain for auto-approval)
         email = "metest@approved-domain.com"
 
-        # Register and auto-approve
+        # Sign in (auto-creates and approves user)
         await client.post(
-            "/api/v1/auth/register",
+            "/api/v1/auth/signin",
             json={"email": email},
         )
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
 
-        register_response = await client.post(
-            "/api/v1/auth/register/verify",
+        signin_response = await client.post(
+            "/api/v1/auth/signin/verify",
             json={"email": email, "code": otp},
         )
 
-        # Use the session cookie from registration
-        cookies = register_response.cookies
+        # Use the session cookie from sign-in
+        cookies = signin_response.cookies
 
         # Call /me with the session
         response = await client.get(
@@ -308,19 +250,19 @@ class TestAdminEndpoints:
         # Create regular user and sign in
         email = "regularuser@approved-domain.com"
 
-        # Register
+        # Sign in (auto-creates and approves user)
         await client.post(
-            "/api/v1/auth/register",
+            "/api/v1/auth/signin",
             json={"email": email},
         )
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
 
-        register_response = await client.post(
-            "/api/v1/auth/register/verify",
+        signin_response = await client.post(
+            "/api/v1/auth/signin/verify",
             json={"email": email, "code": otp},
         )
 
-        cookies = register_response.cookies
+        cookies = signin_response.cookies
 
         # Try to access admin endpoint
         response = await client.get(
@@ -372,17 +314,17 @@ class TestSignOut:
         email = "signouttest@approved-domain.com"
 
         await client.post(
-            "/api/v1/auth/register",
+            "/api/v1/auth/signin",
             json={"email": email},
         )
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
 
-        register_response = await client.post(
-            "/api/v1/auth/register/verify",
+        signin_response = await client.post(
+            "/api/v1/auth/signin/verify",
             json={"email": email, "code": otp},
         )
 
-        cookies = register_response.cookies
+        cookies = signin_response.cookies
 
         # Sign out
         signout_response = await client.post(

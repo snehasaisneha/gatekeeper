@@ -2,7 +2,6 @@ import * as React from 'react';
 import { AuthProvider, useRequireAuth } from './AuthContext';
 import { TopBar } from './TopBar';
 import { AppCard } from './AppCard';
-import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { UserAppAccess } from '@/lib/api';
 
@@ -34,43 +33,64 @@ function HomePageContent({ appName }: HomePageProps) {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-4 border-black border-t-transparent animate-spin"></div>
+          <p className="mt-4 text-sm font-bold uppercase tracking-wider">Loading...</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return null; // Will redirect in useRequireAuth
+    return null;
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col">
       <TopBar appName={appName} />
 
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main className="flex-1 container mx-auto px-6 py-8">
         <div className="max-w-4xl mx-auto space-y-8">
-          <div>
-            <h1 className="text-3xl font-bold">Welcome back!</h1>
-            <p className="text-muted-foreground mt-1">
-              Signed in as {user.email}
+          {/* Welcome Header */}
+          <div className="border-4 border-black">
+            <div className="bg-black text-white p-6">
+              <p className="text-xs font-bold uppercase tracking-wider mb-2">Welcome back</p>
+              <h1 className="text-3xl font-bold uppercase">
+                {user.name || user.email.split('@')[0]}
+              </h1>
+            </div>
+            <div className="p-4 bg-white flex flex-wrap gap-2 items-center">
+              <span className="text-sm">{user.email}</span>
               {user.is_internal && (
-                <span className="ml-2 text-sm text-green-600">(Internal)</span>
+                <span className="border-2 border-black px-2 py-0.5 text-xs font-bold uppercase">
+                  Internal
+                </span>
               )}
-            </p>
+              {user.is_admin && (
+                <span className="border-2 border-black bg-black text-white px-2 py-0.5 text-xs font-bold uppercase">
+                  Admin
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Your Apps Section */}
+          {/* Apps Section */}
           <section>
-            <h2 className="text-xl font-semibold mb-4">Your Apps</h2>
+            <h2 className="text-xl font-bold uppercase tracking-wider mb-6 border-b-4 border-black pb-2">
+              Your Apps
+            </h2>
+
             {isLoadingApps ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <div className="flex items-center justify-center py-16">
+                <div className="inline-block w-8 h-8 border-4 border-black border-t-transparent animate-spin"></div>
               </div>
             ) : apps.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/30">
-                <p>You don't have access to any apps yet.</p>
-                <p className="text-sm mt-1">Contact an administrator for access.</p>
+              <div className="border-4 border-dashed border-black p-8 text-center">
+                <p className="font-bold uppercase tracking-wider">No Apps</p>
+                <p className="text-sm text-gray-600 mt-2">
+                  Contact an administrator for access.
+                </p>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

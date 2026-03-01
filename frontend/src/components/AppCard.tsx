@@ -1,8 +1,4 @@
 import * as React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ExternalLink, AppWindow } from 'lucide-react';
 
 interface AppCardProps {
   name: string;
@@ -13,37 +9,36 @@ interface AppCardProps {
 
 export function AppCard({ name, description, url, role }: AppCardProps) {
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="pb-3">
+    <div className="border-4 border-black bg-white shadow-brutal hover:shadow-brutal-lg hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
+      <div className="p-4 border-b-4 border-black">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <AppWindow className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <CardTitle className="text-lg">{name}</CardTitle>
-          </div>
+          <h3 className="font-bold uppercase tracking-wider">{name}</h3>
           {role && (
-            <Badge variant="secondary" className="flex-shrink-0">
+            <span className="border-2 border-black px-2 py-0.5 text-xs font-bold uppercase shrink-0">
               {role}
-            </Badge>
+            </span>
           )}
         </div>
         {description && (
-          <CardDescription className="line-clamp-2">{description}</CardDescription>
+          <p className="text-sm text-gray-600 mt-2 line-clamp-2">{description}</p>
         )}
-      </CardHeader>
-      <CardContent className="pt-0 mt-auto">
+      </div>
+      <div className="p-4">
         {url ? (
-          <Button asChild className="w-full">
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              Open
-              <ExternalLink className="h-4 w-4 ml-2" />
-            </a>
-          </Button>
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full border-4 border-black bg-black text-white px-4 py-2 font-bold uppercase tracking-wider text-center text-sm hover:bg-white hover:text-black transition-colors"
+          >
+            Open →
+          </a>
         ) : (
-          <Button variant="outline" disabled className="w-full">
-            No URL configured
-          </Button>
+          <span className="block w-full border-4 border-dashed border-gray-400 text-gray-400 px-4 py-2 font-bold uppercase tracking-wider text-center text-sm cursor-not-allowed">
+            No URL
+          </span>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

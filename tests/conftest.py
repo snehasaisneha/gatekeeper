@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from gatekeeper.database import Base
+from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.otp import OTP, OTPPurpose
 from gatekeeper.models.user import User, UserStatus
 
@@ -36,6 +37,13 @@ async def test_engine(test_db_path):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed the approved_domains table with test domains
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        for domain in ["approved-domain.com", "test.com"]:
+            session.add(ApprovedDomain(domain=domain, created_by="test:seed"))
+        await session.commit()
 
     yield engine
 

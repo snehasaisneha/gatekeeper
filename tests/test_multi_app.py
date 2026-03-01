@@ -54,11 +54,11 @@ class TestValidateEndpoint:
         """Test that authenticated requests without X-GK-App return user info."""
         # Create and sign in user
         email = "validate-test@approved-domain.com"
-        await client.post("/api/v1/auth/register", json={"email": email})
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        await client.post("/api/v1/auth/signin", json={"email": email})
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
 
         response = await client.post(
-            "/api/v1/auth/register/verify",
+            "/api/v1/auth/signin/verify",
             json={"email": email, "code": otp},
         )
         cookies = response.cookies
@@ -78,11 +78,11 @@ class TestValidateEndpoint:
         """Test that unregistered apps allow access by default."""
         # Create and sign in user
         email = "unregistered-app@approved-domain.com"
-        await client.post("/api/v1/auth/register", json={"email": email})
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        await client.post("/api/v1/auth/signin", json={"email": email})
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
 
         response = await client.post(
-            "/api/v1/auth/register/verify",
+            "/api/v1/auth/signin/verify",
             json={"email": email, "code": otp},
         )
         cookies = response.cookies
@@ -100,18 +100,22 @@ class TestValidateEndpoint:
     async def test_validate_registered_app_without_access_returns_403(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """Test that registered apps deny access to users without grants."""
-        # Create app (needed to establish app in DB, but not referenced directly)
+        """Test that registered apps deny access to external users without grants."""
+        # Create app
         await create_test_app(db_session, "restricted-app", "Restricted App")
 
-        # Create and sign in user (no app access granted)
-        email = "no-access@approved-domain.com"
-        await client.post("/api/v1/auth/register", json={"email": email})
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        # Create and sign in user from non-approved domain (external user)
+        # First create them directly as approved to avoid the pending flow
+        user = await create_test_user(
+            db_session, "no-access@external-domain.com", UserStatus.APPROVED
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": user.email})
+        otp = await get_latest_otp(db_session, user.email, OTPPurpose.SIGNIN)
 
         response = await client.post(
-            "/api/v1/auth/register/verify",
-            json={"email": email, "code": otp},
+            "/api/v1/auth/signin/verify",
+            json={"email": user.email, "code": otp},
         )
         cookies = response.cookies
 
@@ -165,13 +169,13 @@ class TestValidateEndpoint:
     async def test_validate_returns_role_when_set(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """Test that X-Auth-Role is returned when role is set."""
+        """Test that X-Auth-Role is returned when role is set for external users."""
         # Create app
         app = await create_test_app(db_session, "role-app", "Role App")
 
-        # Create user
+        # Create external user (not from approved domain) - manually approved
         user = await create_test_user(
-            db_session, "has-role@approved-domain.com", UserStatus.APPROVED
+            db_session, "has-role@external-domain.com", UserStatus.APPROVED
         )
 
         # Grant access with role
@@ -204,13 +208,13 @@ class TestValidateEndpoint:
     async def test_validate_no_role_header_when_role_not_set(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """Test that X-Auth-Role is not returned when no role is set."""
+        """Test that X-Auth-Role is not returned when no role is set for external users."""
         # Create app
         app = await create_test_app(db_session, "no-role-app", "No Role App")
 
-        # Create user
+        # Create external user (not from approved domain) - manually approved
         user = await create_test_user(
-            db_session, "no-role@approved-domain.com", UserStatus.APPROVED
+            db_session, "no-role@external-domain.com", UserStatus.APPROVED
         )
 
         # Grant access without role
@@ -246,13 +250,13 @@ class TestAdminAppEndpoints:
 
     async def test_list_apps_requires_admin(self, client: AsyncClient, db_session: AsyncSession):
         """Test that listing apps requires admin access."""
-        # Create regular user
+        # Create regular user and sign in
         email = "regular@approved-domain.com"
-        await client.post("/api/v1/auth/register", json={"email": email})
-        otp = await get_latest_otp(db_session, email, OTPPurpose.REGISTER)
+        await client.post("/api/v1/auth/signin", json={"email": email})
+        otp = await get_latest_otp(db_session, email, OTPPurpose.SIGNIN)
 
         response = await client.post(
-            "/api/v1/auth/register/verify",
+            "/api/v1/auth/signin/verify",
             json={"email": email, "code": otp},
         )
         cookies = response.cookies

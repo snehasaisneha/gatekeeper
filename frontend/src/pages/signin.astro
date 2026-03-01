@@ -1,22 +1,46 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SignInForm } from '@/components/auth/SignInForm';
 
 const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
 ---
 
 <Layout title="Sign In">
-  <div class="min-h-screen flex items-center justify-center p-4">
-    <Card class="w-full max-w-md">
-      <CardHeader class="text-center pb-2">
-        <CardTitle class="text-2xl">{appName}</CardTitle>
-        <CardDescription id="signin-description">Sign in to your account</CardDescription>
-      </CardHeader>
-      <CardContent class="pt-4 pb-8 px-8">
-        <SignInForm client:load />
-      </CardContent>
-    </Card>
+  <div class="min-h-screen bg-white flex flex-col">
+    <!-- Header -->
+    <header class="border-b-4 border-black">
+      <div class="container mx-auto px-6 py-4">
+        <a href="/" class="text-2xl font-bold uppercase tracking-wider hover:bg-black hover:text-white transition-colors px-2 -mx-2">
+          {appName}
+        </a>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 flex items-center justify-center p-6">
+      <div class="w-full max-w-md">
+        <!-- Card -->
+        <div class="border-4 border-black bg-white shadow-brutal-lg">
+          <!-- Card Header -->
+          <div class="border-b-4 border-black bg-black text-white p-6">
+            <h1 class="text-2xl font-bold uppercase tracking-wider">Sign In</h1>
+            <p id="signin-description" class="text-gray-300 mt-1 text-sm">
+              Enter your credentials to continue
+            </p>
+          </div>
+
+          <!-- Card Body -->
+          <div class="p-6">
+            <SignInForm client:load />
+          </div>
+        </div>
+
+        <!-- Footer text -->
+        <p class="text-center text-xs text-gray-500 mt-8 uppercase tracking-wider">
+          Secured by {appName}
+        </p>
+      </div>
+    </main>
   </div>
 </Layout>
 
@@ -40,13 +64,12 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
     const descriptionEl = document.getElementById('signin-description');
 
     if (appSlug && descriptionEl) {
-      // Fetch app name from public apps endpoint
       fetch('/api/v1/auth/apps/public')
         .then(res => res.json())
         .then(apps => {
           const app = apps.find((a: { slug: string }) => a.slug === appSlug);
           if (app) {
-            descriptionEl.textContent = `Sign in to access ${app.name}`;
+            descriptionEl.textContent = `Access ${app.name}`;
           }
         })
         .catch(() => {});

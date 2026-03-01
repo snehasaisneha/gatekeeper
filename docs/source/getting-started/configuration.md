@@ -139,13 +139,39 @@ WEBAUTHN_ORIGIN=https://auth.example.com
 
 ### ACCEPTED_DOMAINS
 
-Email domains that are automatically approved when users register. Comma-separated.
+Email domains that are automatically approved when users sign in. Comma-separated.
 
 ```bash
 ACCEPTED_DOMAINS=example.com,company.org
 ```
 
 Users with emails from other domains go into a pending state and need admin approval.
+
+:::{note}
+These domains are seeded into the database on startup. You can also manage domains via the admin UI or CLI (`gk domains add`).
+:::
+
+## Google SSO settings (optional)
+
+Enable "Sign in with Google" as an authentication option.
+
+### GOOGLE_CLIENT_ID
+
+OAuth 2.0 Client ID from Google Cloud Console.
+
+```bash
+GOOGLE_CLIENT_ID=123456789-abcdef.apps.googleusercontent.com
+```
+
+### GOOGLE_CLIENT_SECRET
+
+OAuth 2.0 Client Secret from Google Cloud Console.
+
+```bash
+GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
+```
+
+Both settings must be provided for Google SSO to be enabled. See the [Google SSO guide](../guides/google-sso.md) for setup instructions.
 
 ## Server settings
 
@@ -213,6 +239,8 @@ OTP_EXPIRY_MINUTES=10  # default
 | `EMAIL_PROVIDER` | `ses` | `ses` or `smtp` |
 | `EMAIL_FROM` | (required) | Sender email address |
 | `ACCEPTED_DOMAINS` | (empty) | Auto-approve email domains |
+| `GOOGLE_CLIENT_ID` | (empty) | Google OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth Client Secret |
 | `WEBAUTHN_RP_ID` | `localhost` | Passkey domain |
 | `WEBAUTHN_RP_NAME` | `Gatekeeper` | Passkey display name |
 | `WEBAUTHN_ORIGIN` | `http://localhost:8000` | Passkey origin |

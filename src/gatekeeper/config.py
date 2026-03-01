@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     webauthn_rp_name: str = "Gatekeeper"
     webauthn_origin: str = "http://localhost:4321"
 
+    # OAuth - Google
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
+    @computed_field
+    @property
+    def google_oauth_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
     # Server
     server_host: str = "0.0.0.0"
     server_port: int = 8000

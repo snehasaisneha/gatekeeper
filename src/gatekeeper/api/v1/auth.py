@@ -1,9 +1,13 @@
 import base64
 import json
+import secrets
 import uuid
 from typing import Any
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException, Path, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
 from gatekeeper.api.deps import CurrentUser, CurrentUserOptional, DbSession
@@ -167,145 +171,16 @@ async def validate(
 
 
 @router.post(
-    "/register",
-    response_model=MessageResponse,
-    responses={
-        200: {"description": "OTP sent successfully"},
-        400: {"model": ErrorResponse, "description": "Email already registered"},
-        429: {"model": ErrorResponse, "description": "Too many requests"},
-    },
-    summary="Start registration",
-    description="Send an OTP to the provided email address to start registration.",
-)
-@limiter.limit("3/hour")
-async def register(request: Request, data: OTPRequest, db: DbSession) -> MessageResponse:
-    email = data.email.lower()
-
-    stmt = select(User).where(User.email == email)
-    result = await db.execute(stmt)
-    existing_user = result.scalar_one_or_none()
-
-    if existing_user:
-        if existing_user.status == UserStatus.APPROVED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered. Please sign in instead.",
-            )
-        elif existing_user.status == UserStatus.PENDING:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Registration pending approval. Please wait for admin approval.",
-            )
-        elif existing_user.status == UserStatus.REJECTED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Registration was rejected. Please contact an administrator.",
-            )
-
-    otp_service = OTPService(db)
-    sent = await otp_service.create_and_send(email, OTPPurpose.REGISTER)
-
-    if not sent:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send verification email. Please try again.",
-        )
-
-    return MessageResponse(
-        message="Verification code sent",
-        detail="Check your email for the 6-digit code.",
-    )
-
-
-@router.post(
-    "/register/verify",
-    response_model=AuthResponse,
-    responses={
-        200: {"description": "Registration successful"},
-        400: {"model": ErrorResponse, "description": "Invalid or expired OTP"},
-        429: {"model": ErrorResponse, "description": "Too many requests"},
-    },
-    summary="Complete registration",
-    description="Verify the OTP and complete registration. "
-    "Auto-approves if email domain is in accepted domains.",
-)
-@limiter.limit("5/15minutes")
-async def register_verify(
-    request: Request,
-    data: OTPVerifyRequest,
-    response: Response,
-    db: DbSession,
-) -> AuthResponse:
-    email = data.email.lower()
-
-    otp_service = OTPService(db)
-    success, error_message = await otp_service.verify(email, data.code, OTPPurpose.REGISTER)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_message or "Invalid or expired verification code.",
-        )
-
-    stmt = select(User).where(User.email == email)
-    result = await db.execute(stmt)
-    existing_user = result.scalar_one_or_none()
-
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered.",
-        )
-
-    auto_approve = settings.is_accepted_domain(email)
-
-    user = User(
-        email=email,
-        status=UserStatus.APPROVED if auto_approve else UserStatus.PENDING,
-        is_admin=False,
-    )
-    db.add(user)
-    await db.flush()
-    await db.refresh(user)
-
-    if auto_approve:
-        session_service = SessionService(db)
-        session = await session_service.create(user)
-        await db.commit()  # Commit before responding so /auth/me can find the session
-        set_session_cookie(response, session.token)
-
-        return AuthResponse(
-            message="Registration successful",
-            user=await _build_user_response(db, user),
-        )
-    else:
-        email_service = EmailService(db=db)
-        await email_service.send_registration_pending(email)
-
-        # Notify all admins of the pending registration
-        admin_stmt = select(User).where(User.is_admin == True)  # noqa: E712
-        admin_result = await db.execute(admin_stmt)
-        admins = admin_result.scalars().all()
-        for admin in admins:
-            await email_service.send_pending_registration_notification(admin.email, email)
-
-        await db.commit()  # Commit pending user so they persist
-
-        return AuthResponse(
-            message="Registration pending approval",
-            user=None,
-        )
-
-
-@router.post(
     "/signin",
     response_model=MessageResponse,
     responses={
         200: {"description": "OTP sent successfully"},
-        400: {"model": ErrorResponse, "description": "User not found or not approved"},
+        400: {"model": ErrorResponse, "description": "User rejected"},
         429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Start sign-in",
-    description="Send an OTP to the provided email address to start sign-in.",
+    description="Send an OTP to the provided email address. "
+    "Auto-creates account if user doesn't exist (auto-approved if domain is in approved_domains).",
 )
 @limiter.limit("5/15minutes")
 async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageResponse:
@@ -315,23 +190,27 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
+    # Auto-create user if they don't exist
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No account found with this email. Please register first.",
+        is_internal = await is_internal_user(db, email)
+        user = User(
+            email=email,
+            status=UserStatus.APPROVED if is_internal else UserStatus.PENDING,
+            is_admin=False,
         )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
 
-    if user.status == UserStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Your registration is pending approval.",
-        )
-
+    # Rejected users cannot sign in
     if user.status == UserStatus.REJECTED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Your registration was rejected. Please contact an administrator.",
+            detail="Your account was rejected. Please contact an administrator.",
         )
+
+    # Pending users can still verify their email, but won't get a session until approved
+    # We send them the OTP so they can prove email ownership
 
     otp_service = OTPService(db)
     sent = await otp_service.create_and_send(email, OTPPurpose.SIGNIN)
@@ -352,12 +231,13 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
     "/signin/verify",
     response_model=AuthResponse,
     responses={
-        200: {"description": "Sign-in successful"},
+        200: {"description": "Sign-in successful or pending approval"},
         400: {"model": ErrorResponse, "description": "Invalid or expired OTP"},
         429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Complete sign-in",
-    description="Verify the OTP and complete sign-in.",
+    description="Verify the OTP and complete sign-in. "
+    "For pending users, sends notification to admins and returns pending status.",
 )
 @limiter.limit("5/15minutes")
 async def signin_verify(
@@ -368,14 +248,20 @@ async def signin_verify(
 ) -> AuthResponse:
     email = data.email.lower()
 
-    stmt = select(User).where(User.email == email, User.status == UserStatus.APPROVED)
+    stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No approved account found with this email.",
+            detail="No account found with this email.",
+        )
+
+    if user.status == UserStatus.REJECTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your account was rejected. Please contact an administrator.",
         )
 
     otp_service = OTPService(db)
@@ -386,6 +272,26 @@ async def signin_verify(
             detail=error_message or "Invalid or expired verification code.",
         )
 
+    # Handle pending users - notify them and admins
+    if user.status == UserStatus.PENDING:
+        email_service = EmailService(db=db)
+        await email_service.send_registration_pending(email)
+
+        # Notify all admins of the pending user
+        admin_stmt = select(User).where(User.is_admin == True)  # noqa: E712
+        admin_result = await db.execute(admin_stmt)
+        admins = admin_result.scalars().all()
+        for admin in admins:
+            await email_service.send_pending_registration_notification(admin.email, email)
+
+        await db.commit()
+
+        return AuthResponse(
+            message="Your account is pending approval",
+            user=None,
+        )
+
+    # Approved user - create session
     session_service = SessionService(db)
     session = await session_service.create(user)
     await db.commit()  # Commit before responding so /auth/me can find the session
@@ -558,6 +464,14 @@ async def delete_me(
 
 _passkey_challenges: dict[str, bytes] = {}
 _passkey_registration_challenges: dict[str, bytes] = {}
+
+# OAuth state storage (state -> redirect_url)
+_oauth_states: dict[str, str] = {}
+
+# Google OAuth constants
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 @router.post(
@@ -746,3 +660,196 @@ async def delete_passkey(
         )
 
     return MessageResponse(message="Passkey deleted successfully")
+
+
+@router.get(
+    "/google/login",
+    response_class=RedirectResponse,
+    responses={
+        302: {"description": "Redirect to Google OAuth"},
+        400: {"model": ErrorResponse, "description": "Google OAuth not configured"},
+    },
+    summary="Start Google OAuth",
+    description="Redirect to Google OAuth for authentication.",
+)
+async def google_login(
+    request: Request,
+    redirect: str | None = None,
+) -> RedirectResponse:
+    if not settings.google_oauth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google OAuth is not configured.",
+        )
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = redirect or "/"
+
+    # Build Google OAuth URL
+    callback_url = f"{settings.app_url}/api/v1/auth/google/callback"
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": callback_url,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+
+    auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+    return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get(
+    "/google/callback",
+    response_class=RedirectResponse,
+    responses={
+        302: {"description": "Redirect to frontend after authentication"},
+        400: {"model": ErrorResponse, "description": "OAuth error"},
+    },
+    summary="Google OAuth callback",
+    description="Handle Google OAuth callback and create session.",
+)
+async def google_callback(
+    request: Request,
+    response: Response,
+    db: DbSession,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    # Handle OAuth errors
+    if error:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error={error}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=missing_params",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # Verify state
+    redirect_url = _oauth_states.pop(state, None)
+    if redirect_url is None:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=invalid_state",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    try:
+        # Exchange code for tokens
+        callback_url = f"{settings.app_url}/api/v1/auth/google/callback"
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": callback_url,
+                },
+            )
+            token_response.raise_for_status()
+            tokens = token_response.json()
+
+            # Get user info
+            userinfo_response = await client.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            )
+            userinfo_response.raise_for_status()
+            userinfo = userinfo_response.json()
+
+        email = userinfo.get("email", "").lower()
+        if not email:
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/signin?error=no_email",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Find or create user
+        stmt = select(User).where(User.email == email)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            # Auto-create user
+            is_internal = await is_internal_user(db, email)
+            user = User(
+                email=email,
+                name=userinfo.get("name"),
+                status=UserStatus.APPROVED if is_internal else UserStatus.PENDING,
+                is_admin=False,
+            )
+            db.add(user)
+            await db.flush()
+            await db.refresh(user)
+
+        # Handle rejected users
+        if user.status == UserStatus.REJECTED:
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/signin?error=account_rejected",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Handle pending users
+        if user.status == UserStatus.PENDING:
+            email_service = EmailService(db=db)
+            await email_service.send_registration_pending(email)
+
+            # Notify admins
+            admin_stmt = select(User).where(User.is_admin == True)  # noqa: E712
+            admin_result = await db.execute(admin_stmt)
+            admins = admin_result.scalars().all()
+            for admin in admins:
+                await email_service.send_pending_registration_notification(admin.email, email)
+
+            await db.commit()
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/signin?pending=true",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Update name from Google if not set
+        if not user.name and userinfo.get("name"):
+            user.name = userinfo.get("name")
+
+        # Create session
+        session_service = SessionService(db)
+        session = await session_service.create(user)
+        await db.commit()
+
+        # Create response with cookie
+        final_redirect = RedirectResponse(
+            url=f"{settings.frontend_url}{redirect_url}",
+            status_code=status.HTTP_302_FOUND,
+        )
+        set_session_cookie(final_redirect, session.token)
+        return final_redirect
+
+    except httpx.HTTPStatusError:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=oauth_failed",
+            status_code=status.HTTP_302_FOUND,
+        )
+    except Exception:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=internal_error",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+
+@router.get(
+    "/google/enabled",
+    response_model=dict[str, bool],
+    summary="Check if Google OAuth is enabled",
+    description="Returns whether Google OAuth is configured and available.",
+)
+async def google_enabled() -> dict[str, bool]:
+    return {"enabled": settings.google_oauth_enabled}

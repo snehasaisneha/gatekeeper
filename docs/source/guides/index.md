@@ -10,6 +10,10 @@ Step-by-step instructions for common Gatekeeper tasks.
 
 - [Managing apps](apps.md) — Register apps, grant access, set up roles
 
+## Authentication
+
+- [Google SSO](google-sso.md) — Enable "Sign in with Google" authentication
+
 ## Operations
 
 - [Email setup](email.md) — Configure AWS SES or SMTP for login codes
@@ -20,6 +24,7 @@ Step-by-step instructions for common Gatekeeper tasks.
 
 users
 apps
+google-sso
 email
 deployment
 ```
