@@ -57,7 +57,7 @@ function SettingsPageContent({ appName }: SettingsPageProps) {
   const handleToggleNotifications = async (enabled: boolean) => {
     setIsSavingNotifications(true);
     try {
-      const updatedUser = await api.auth.updateProfile({ notify_private_app_requests: enabled });
+      const updatedUser = await api.auth.updateProfile({ notify_new_registrations: enabled });
       setCurrentUser(updatedUser);
     } catch (err) {
       // Revert on error - the switch will reflect the current state
@@ -168,13 +168,13 @@ function SettingsPageContent({ appName }: SettingsPageProps) {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-sm font-medium">Private App Access Requests</Label>
+                    <Label className="text-sm font-medium">New User Registrations</Label>
                     <p className="text-sm text-muted-foreground">
-                      Receive email notifications when users request access to private apps
+                      Receive email notifications when new users sign up and require approval
                     </p>
                   </div>
                   <Switch
-                    checked={currentUser.notify_private_app_requests}
+                    checked={currentUser.notify_new_registrations}
                     onCheckedChange={handleToggleNotifications}
                     disabled={isSavingNotifications}
                   />

@@ -361,62 +361,6 @@ What can Super Admins do?
         """
         return await self._send_with_suppression_check(to_email, subject, html_body, text_body)
 
-    async def send_private_app_access_request_notification(
-        self,
-        admin_email: str,
-        requester_email: str,
-        requester_name: str | None,
-        app_name: str,
-        message: str | None,
-    ) -> bool:
-        """Notify admin when a user requests access to a private app."""
-        subject = f"{self.settings.app_name} - Access request for {app_name}"
-        admin_url = f"{self.settings.frontend_url}/admin"
-
-        requester_display = requester_name or requester_email
-        message_html = ""
-        message_text = ""
-        if message:
-            message_html = f'<p style="color: #666; margin: 12px 0; padding: 12px; background: #f9f9f9; border-radius: 6px;"><em>"{message}"</em></p>'
-            message_text = f'\nMessage: "{message}"\n'
-
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .email-box {{ background: #f5f5f5; padding: 12px 16px; border-radius: 6px; margin: 16px 0; }}
-                .button {{ display: inline-block; padding: 12px 24px; background: #1a1a1a; color: #ffffff !important; text-decoration: none; border-radius: 6px; margin-top: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>{self.settings.app_name}</h2>
-                <p><strong>{requester_display}</strong> is requesting access to the private app <strong>{app_name}</strong>.</p>
-                <div class="email-box">
-                    <strong>Requester:</strong> {requester_email}
-                </div>
-                {message_html}
-                <p>Please review this request in the admin panel.</p>
-                <a href="{admin_url}" class="button">Review Request</a>
-            </div>
-        </body>
-        </html>
-        """
-        text_body = f"""
-{self.settings.app_name}
-
-{requester_display} is requesting access to the private app {app_name}.
-
-Requester: {requester_email}
-{message_text}
-Please review this request in the admin panel: {admin_url}
-        """
-        return await self._send_with_suppression_check(admin_email, subject, html_body, text_body)
-
     async def send_app_access_granted(
         self,
         to_email: str,

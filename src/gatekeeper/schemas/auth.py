@@ -116,6 +116,9 @@ class UserResponse(BaseModel):
     is_internal: bool = Field(
         default=False, description="Whether user is internal (email domain in approved_domains)"
     )
+    notify_new_registrations: bool = Field(
+        default=False, description="Receive email notifications for new user registrations"
+    )
     created_at: datetime = Field(..., description="Account creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -130,6 +133,7 @@ class UserResponse(BaseModel):
                 "is_admin": False,
                 "is_seeded": False,
                 "is_internal": True,
+                "notify_new_registrations": False,
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z",
             }
@@ -141,8 +145,13 @@ class ProfileUpdateRequest(BaseModel):
     """Request to update user profile."""
 
     name: str | None = Field(None, max_length=255, description="User's display name")
+    notify_new_registrations: bool | None = Field(
+        None, description="Receive email notifications when new users register (admin only)"
+    )
 
-    model_config = {"json_schema_extra": {"example": {"name": "John Doe"}}}
+    model_config = {
+        "json_schema_extra": {"example": {"name": "John Doe", "notify_new_registrations": True}}
+    }
 
 
 class AuthResponse(BaseModel):

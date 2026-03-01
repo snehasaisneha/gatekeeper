@@ -92,7 +92,7 @@ export function OTPInput({ value, onChange, onComplete, disabled, className }: O
           onKeyDown={(e) => handleKeyDown(index, e)}
           onPaste={handlePaste}
           disabled={disabled}
-          className="w-12 h-14 text-center text-2xl font-bold border-4 border-black bg-white focus:outline-none focus:bg-yellow-100 transition-colors disabled:opacity-50"
+          className="w-12 h-14 text-center text-2xl font-bold border-4 border-black bg-white focus:outline-none focus:bg-gray-100 transition-colors disabled:opacity-50"
           autoComplete="one-time-code"
         />
       ))}

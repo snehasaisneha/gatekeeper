@@ -8,6 +8,7 @@ export interface User {
   is_admin: boolean;
   is_seeded: boolean;
   is_internal: boolean;
+  notify_new_registrations: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +144,16 @@ export const api = {
       return `${API_BASE}/auth/google/login${params.toString() ? '?' + params.toString() : ''}`;
     },
 
+    githubEnabled: () => request<{ enabled: boolean }>('/auth/github/enabled'),
+
+    getGithubLoginUrl: (redirect?: string) => {
+      const params = new URLSearchParams();
+      if (redirect) params.set('redirect', redirect);
+      return `${API_BASE}/auth/github/login${params.toString() ? '?' + params.toString() : ''}`;
+    },
+
+    oauthProviders: () => request<{ google: boolean; github: boolean }>('/auth/oauth/providers'),
+
     signout: () =>
       request<MessageResponse>('/auth/signout', {
         method: 'POST',
@@ -150,7 +161,7 @@ export const api = {
 
     me: () => request<User>('/auth/me'),
 
-    updateProfile: (data: { name?: string }) =>
+    updateProfile: (data: { name?: string; notify_new_registrations?: boolean }) =>
       request<User>('/auth/me', {
         method: 'PATCH',
         body: JSON.stringify(data),

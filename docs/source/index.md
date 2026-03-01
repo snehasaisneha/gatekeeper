@@ -5,7 +5,7 @@ Gatekeeper is a lightweight authentication gateway for protecting your internal 
 ## Why Gatekeeper?
 
 - **Simple**: One binary, one database file, deploy in 15 minutes
-- **Passwordless**: Users sign in with email codes or passkeys—no passwords to manage
+- **Multiple auth methods**: Google SSO, email codes, or passkeys—no passwords to manage
 - **Self-hosted**: Your data stays on your servers, no vendor lock-in
 - **Multi-app SSO**: One login works across all your internal tools
 

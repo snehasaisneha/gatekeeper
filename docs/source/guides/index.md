@@ -13,6 +13,7 @@ Step-by-step instructions for common Gatekeeper tasks.
 ## Authentication
 
 - [Google SSO](google-sso.md) — Enable "Sign in with Google" authentication
+- [GitHub SSO](github-sso.md) — Enable "Sign in with GitHub" authentication
 
 ## Operations
 
@@ -25,6 +26,7 @@ Step-by-step instructions for common Gatekeeper tasks.
 users
 apps
 google-sso
+github-sso
 email
 deployment
 ```

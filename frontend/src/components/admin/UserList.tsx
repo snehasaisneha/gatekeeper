@@ -130,9 +130,9 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                 <td className="p-4 align-middle">{user.email}</td>
                 <td className="p-4 align-middle">
                   {user.is_internal ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Internal</Badge>
+                    <Badge variant="outline" className="bg-gray-100 text-black border-black">Internal</Badge>
                   ) : (
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">External</Badge>
+                    <Badge variant="outline" className="bg-white text-gray-600 border-gray-400">External</Badge>
                   )}
                 </td>
                 <td className="p-4 align-middle">{getStatusBadge(user.status)}</td>

@@ -3,6 +3,7 @@
 Lightweight, self-hosted auth gateway for internal tools. Email OTP + Passkeys. Multi-app SSO. Protect any app behind nginx. No vendor lock-in, no per-user pricing, full data control.
 
 © 2025 Sai Sneha · [AGPL-3.0-or-later](LICENSE)
+
 Gatekeeper is free to use, modify, and self-host, in perpetuity. Source sharing is only required if you offer a modified version of Gatekeeper as a public service.
 
 ## Why Gatekeeper?
@@ -18,7 +19,7 @@ Gatekeeper: single SQLite file, ~50MB RAM, deploys in 15 minutes. Sits in front 
 
 ## Features
 
-- **Google SSO + Email OTP + Passkeys** — Multiple auth methods, no passwords
+- **Google SSO + GitHub SSO + Email OTP + Passkeys** — Multiple auth methods, no passwords
 - **Zero-friction onboarding** — Users from approved domains sign in directly, no registration
 - **Multi-app SSO** — One login for all your internal tools (`*.company.com`)
 - **Role-based access** — Control who accesses what, with optional role hints
@@ -100,6 +101,8 @@ Key environment variables (see `.env.example` for all):
 | `COOKIE_DOMAIN`       | `.example.com` for multi-app SSO                    |
 | `GOOGLE_CLIENT_ID`    | Google OAuth client ID (optional)                   |
 | `GOOGLE_CLIENT_SECRET`| Google OAuth client secret (optional)               |
+| `GITHUB_CLIENT_ID`    | GitHub OAuth client ID (optional)                   |
+| `GITHUB_CLIENT_SECRET`| GitHub OAuth client secret (optional)               |
 | `WEBAUTHN_RP_ID`      | Domain for passkey registration                     |
 
 ## Production Deployment
@@ -127,11 +130,11 @@ See [`deployment/README.md`](deployment/README.md) for full guide.
 - Small to medium teams (5–100 users)
 - 3–10 internal tools needing protection
 - Self-hosted requirement (data residency, compliance)
-- Teams using Google Workspace (one-click SSO)
+- Teams using Google Workspace or GitHub (one-click SSO)
 
 **Not a fit:**
 
 - Enterprise scale (1000+ users, complex RBAC hierarchies)
 - Multi-tenant SaaS (customer-facing auth)
-- Need for SAML/OIDC provider integration beyond Google
+- Need for SAML/OIDC provider integration beyond Google/GitHub
 

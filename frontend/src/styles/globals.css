@@ -53,7 +53,7 @@
   }
 
   .brutalist-input {
-    @apply border-2 border-black bg-white px-4 py-3 text-black placeholder:text-gray-500 focus:outline-none focus:ring-0 focus:border-black focus:bg-yellow-100 transition-colors;
+    @apply border-2 border-black bg-white px-4 py-3 text-black placeholder:text-gray-500 focus:outline-none focus:ring-0 focus:border-black focus:bg-gray-100 transition-colors;
   }
 
   .brutalist-btn {

@@ -90,7 +90,7 @@ export function TopBar({ appName = 'Gatekeeper' }: TopBarProps) {
                   <button
                     onClick={handleSignOut}
                     disabled={isSigningOut}
-                    className="w-full text-left px-4 py-2 font-bold uppercase tracking-wider text-sm hover:bg-red-500 hover:text-white transition-colors disabled:opacity-50"
+                    className="w-full text-left px-4 py-2 font-bold uppercase tracking-wider text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-50"
                   >
                     {isSigningOut ? '...' : '× Sign Out'}
                   </button>

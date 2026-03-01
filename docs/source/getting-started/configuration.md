@@ -173,6 +173,28 @@ GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
 
 Both settings must be provided for Google SSO to be enabled. See the [Google SSO guide](../guides/google-sso.md) for setup instructions.
 
+## GitHub SSO settings (optional)
+
+Enable "Sign in with GitHub" as an authentication option. GitHub SSO checks all verified emails linked to the user's GitHub account.
+
+### GITHUB_CLIENT_ID
+
+OAuth Client ID from GitHub Developer Settings.
+
+```bash
+GITHUB_CLIENT_ID=your-github-client-id
+```
+
+### GITHUB_CLIENT_SECRET
+
+OAuth Client Secret from GitHub Developer Settings.
+
+```bash
+GITHUB_CLIENT_SECRET=your-github-client-secret
+```
+
+Both settings must be provided for GitHub SSO to be enabled. See the [GitHub SSO guide](../guides/github-sso.md) for setup instructions.
+
 ## Server settings
 
 These settings configure the Gatekeeper API server. They can be set via environment variables or overridden with CLI arguments when running `gk ops serve`.
@@ -241,6 +263,8 @@ OTP_EXPIRY_MINUTES=10  # default
 | `ACCEPTED_DOMAINS` | (empty) | Auto-approve email domains |
 | `GOOGLE_CLIENT_ID` | (empty) | Google OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth Client Secret |
+| `GITHUB_CLIENT_ID` | (empty) | GitHub OAuth Client ID |
+| `GITHUB_CLIENT_SECRET` | (empty) | GitHub OAuth Client Secret |
 | `WEBAUTHN_RP_ID` | `localhost` | Passkey domain |
 | `WEBAUTHN_RP_NAME` | `Gatekeeper` | Passkey display name |
 | `WEBAUTHN_ORIGIN` | `http://localhost:8000` | Passkey origin |

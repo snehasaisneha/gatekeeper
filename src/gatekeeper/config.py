@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     def google_oauth_enabled(self) -> bool:
         return bool(self.google_client_id and self.google_client_secret)
 
+    # OAuth - GitHub
+    github_client_id: str = ""
+    github_client_secret: str = ""
+
+    @computed_field
+    @property
+    def github_oauth_enabled(self) -> bool:
+        return bool(self.github_client_id and self.github_client_secret)
+
     # Server
     server_host: str = "0.0.0.0"
     server_port: int = 8000

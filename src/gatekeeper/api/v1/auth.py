@@ -81,6 +81,7 @@ async def _build_user_response(db: DbSession, user: User) -> UserResponse:
         is_admin=user.is_admin,
         is_seeded=user.is_seeded,
         is_internal=is_internal,
+        notify_new_registrations=user.notify_new_registrations,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -272,13 +273,16 @@ async def signin_verify(
             detail=error_message or "Invalid or expired verification code.",
         )
 
-    # Handle pending users - notify them and admins
+    # Handle pending users - notify them and admins who opted in
     if user.status == UserStatus.PENDING:
         email_service = EmailService(db=db)
         await email_service.send_registration_pending(email)
 
-        # Notify all admins of the pending user
-        admin_stmt = select(User).where(User.is_admin == True)  # noqa: E712
+        # Notify admins who have enabled registration notifications
+        admin_stmt = select(User).where(
+            User.is_admin == True,  # noqa: E712
+            User.notify_new_registrations == True,  # noqa: E712
+        )
         admin_result = await db.execute(admin_stmt)
         admins = admin_result.scalars().all()
         for admin in admins:
@@ -358,6 +362,9 @@ async def update_me(
 ) -> UserResponse:
     if data.name is not None:
         current_user.name = data.name
+    # Only admins can set notification preferences
+    if data.notify_new_registrations is not None and current_user.is_admin:
+        current_user.notify_new_registrations = data.notify_new_registrations
     await db.flush()
     await db.refresh(current_user)
     return await _build_user_response(db, current_user)
@@ -472,6 +479,12 @@ _oauth_states: dict[str, str] = {}
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+# GitHub OAuth constants
+GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_EMAILS_URL = "https://api.github.com/user/emails"
 
 
 @router.post(
@@ -803,8 +816,11 @@ async def google_callback(
             email_service = EmailService(db=db)
             await email_service.send_registration_pending(email)
 
-            # Notify admins
-            admin_stmt = select(User).where(User.is_admin == True)  # noqa: E712
+            # Notify admins who have enabled registration notifications
+            admin_stmt = select(User).where(
+                User.is_admin == True,  # noqa: E712
+                User.notify_new_registrations == True,  # noqa: E712
+            )
             admin_result = await db.execute(admin_stmt)
             admins = admin_result.scalars().all()
             for admin in admins:
@@ -853,3 +869,265 @@ async def google_callback(
 )
 async def google_enabled() -> dict[str, bool]:
     return {"enabled": settings.google_oauth_enabled}
+
+
+@router.get(
+    "/github/login",
+    response_class=RedirectResponse,
+    responses={
+        302: {"description": "Redirect to GitHub OAuth"},
+        400: {"model": ErrorResponse, "description": "GitHub OAuth not configured"},
+    },
+    summary="Start GitHub OAuth",
+    description="Redirect to GitHub OAuth for authentication.",
+)
+async def github_login(
+    request: Request,
+    redirect: str | None = None,
+) -> RedirectResponse:
+    if not settings.github_oauth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GitHub OAuth is not configured.",
+        )
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = redirect or "/"
+
+    # Build GitHub OAuth URL
+    callback_url = f"{settings.app_url}/api/v1/auth/github/callback"
+    params = {
+        "client_id": settings.github_client_id,
+        "redirect_uri": callback_url,
+        "scope": "user:email",
+        "state": state,
+    }
+
+    auth_url = f"{GITHUB_AUTH_URL}?{urlencode(params)}"
+    return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get(
+    "/github/callback",
+    response_class=RedirectResponse,
+    responses={
+        302: {"description": "Redirect to frontend after authentication"},
+        400: {"model": ErrorResponse, "description": "OAuth error"},
+    },
+    summary="GitHub OAuth callback",
+    description="Handle GitHub OAuth callback and create session.",
+)
+async def github_callback(
+    request: Request,
+    response: Response,
+    db: DbSession,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    # Handle OAuth errors
+    if error:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error={error}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=missing_params",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # Verify state
+    redirect_url = _oauth_states.pop(state, None)
+    if redirect_url is None:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=invalid_state",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    try:
+        # Exchange code for access token
+        callback_url = f"{settings.app_url}/api/v1/auth/github/callback"
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GITHUB_TOKEN_URL,
+                data={
+                    "client_id": settings.github_client_id,
+                    "client_secret": settings.github_client_secret,
+                    "code": code,
+                    "redirect_uri": callback_url,
+                },
+                headers={"Accept": "application/json"},
+            )
+            token_response.raise_for_status()
+            tokens = token_response.json()
+
+            access_token = tokens.get("access_token")
+            if not access_token:
+                return RedirectResponse(
+                    url=f"{settings.frontend_url}/signin?error=oauth_failed",
+                    status_code=status.HTTP_302_FOUND,
+                )
+
+            # Get user info
+            user_response = await client.get(
+                GITHUB_USER_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            user_response.raise_for_status()
+            userinfo = user_response.json()
+
+            # Get all user emails
+            emails_response = await client.get(
+                GITHUB_EMAILS_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            emails_response.raise_for_status()
+            emails_data = emails_response.json()
+
+        # Find verified emails and check for approved domains
+        verified_emails = [e["email"].lower() for e in emails_data if e.get("verified", False)]
+
+        if not verified_emails:
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/signin?error=no_email",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Check if any verified email matches an approved domain
+        matching_email = None
+        for email in verified_emails:
+            if await is_internal_user(db, email):
+                matching_email = email
+                break
+
+        # If no domain match, check if user already exists with any of these emails
+        existing_user = None
+        if not matching_email:
+            for email in verified_emails:
+                stmt = select(User).where(User.email == email)
+                result = await db.execute(stmt)
+                existing_user = result.scalar_one_or_none()
+                if existing_user:
+                    matching_email = email
+                    break
+
+        # If still no match, use primary email but they'll need approval
+        if not matching_email:
+            primary_emails = [e["email"].lower() for e in emails_data if e.get("primary")]
+            matching_email = primary_emails[0] if primary_emails else verified_emails[0]
+
+        email = matching_email
+
+        # Find or create user
+        stmt = select(User).where(User.email == email)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        is_internal = await is_internal_user(db, email)
+
+        if not user:
+            # For GitHub, if no approved domain match, show specific error
+            if not is_internal:
+                return RedirectResponse(
+                    url=f"{settings.frontend_url}/signin?error=github_no_org_email",
+                    status_code=status.HTTP_302_FOUND,
+                )
+
+            # Auto-create user (only for internal domain matches)
+            user = User(
+                email=email,
+                name=userinfo.get("name") or userinfo.get("login"),
+                status=UserStatus.APPROVED,
+                is_admin=False,
+            )
+            db.add(user)
+            await db.flush()
+            await db.refresh(user)
+
+        # Handle rejected users
+        if user.status == UserStatus.REJECTED:
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/signin?error=account_rejected",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Handle pending users
+        if user.status == UserStatus.PENDING:
+            email_service = EmailService(db=db)
+            await email_service.send_registration_pending(email)
+
+            # Notify admins who have enabled registration notifications
+            admin_stmt = select(User).where(
+                User.is_admin == True,  # noqa: E712
+                User.notify_new_registrations == True,  # noqa: E712
+            )
+            admin_result = await db.execute(admin_stmt)
+            admins = admin_result.scalars().all()
+            for admin in admins:
+                await email_service.send_pending_registration_notification(admin.email, email)
+
+            await db.commit()
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/signin?pending=true",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Update name from GitHub if not set
+        if not user.name:
+            user.name = userinfo.get("name") or userinfo.get("login")
+
+        # Create session
+        session_service = SessionService(db)
+        session = await session_service.create(user)
+        await db.commit()
+
+        # Create response with cookie
+        final_redirect = RedirectResponse(
+            url=f"{settings.frontend_url}{redirect_url}",
+            status_code=status.HTTP_302_FOUND,
+        )
+        set_session_cookie(final_redirect, session.token)
+        return final_redirect
+
+    except httpx.HTTPStatusError:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=oauth_failed",
+            status_code=status.HTTP_302_FOUND,
+        )
+    except Exception:
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/signin?error=internal_error",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+
+@router.get(
+    "/github/enabled",
+    response_model=dict[str, bool],
+    summary="Check if GitHub OAuth is enabled",
+    description="Returns whether GitHub OAuth is configured and available.",
+)
+async def github_enabled() -> dict[str, bool]:
+    return {"enabled": settings.github_oauth_enabled}
+
+
+@router.get(
+    "/oauth/providers",
+    response_model=dict[str, bool],
+    summary="Get enabled OAuth providers",
+    description="Returns which OAuth providers are configured and available.",
+)
+async def oauth_providers() -> dict[str, bool]:
+    return {
+        "google": settings.google_oauth_enabled,
+        "github": settings.github_oauth_enabled,
+    }
