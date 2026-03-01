@@ -149,3 +149,10 @@ dmypy.json
 
 node_modules/
 staticauth.db
+
+# Local notes/docs
+backlog.md
+learnings.md
+prompt.md
+roadmap.md
+comparison.md
