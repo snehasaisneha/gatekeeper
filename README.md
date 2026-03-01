@@ -18,11 +18,12 @@ Gatekeeper: single SQLite file, ~50MB RAM, deploys in 15 minutes. Sits in front 
 
 ## Features
 
-- **Email OTP + Passkeys** — No passwords to manage or leak
+- **Google SSO + Email OTP + Passkeys** — Multiple auth methods, no passwords
+- **Zero-friction onboarding** — Users from approved domains sign in directly, no registration
 - **Multi-app SSO** — One login for all your internal tools (`*.company.com`)
 - **Role-based access** — Control who accesses what, with optional role hints
-- **Admin panel** — Approve registrations, manage users and apps
-- **CLI tools** — `gk users`, `gk apps`, `gk ops` for headless management
+- **Admin panel** — Approve users, manage domains and apps
+- **CLI tools** — `gk users`, `gk apps`, `gk domains`, `gk ops` for headless management
 - **SQLite or PostgreSQL** — Zero-config default, scales when needed
 - **SES or SMTP** — Bring your own email provider
 
@@ -72,6 +73,10 @@ uv run gk users add --email user@example.com
 uv run gk users list
 uv run gk users approve --email user@example.com
 
+# Domain management (auto-approve users from these domains)
+uv run gk domains add --domain company.com
+uv run gk domains list
+
 # App management
 uv run gk apps add --slug grafana --name "Grafana"
 uv run gk apps grant --slug grafana --email user@example.com --role admin
@@ -86,14 +91,16 @@ uv run gk ops healthcheck
 
 Key environment variables (see `.env.example` for all):
 
-| Variable           | Description                                         |
-| ------------------ | --------------------------------------------------- |
-| `SECRET_KEY`       | Signing key (min 32 chars)                          |
-| `DATABASE_URL`     | `sqlite+aiosqlite:///./gatekeeper.db` or PostgreSQL |
-| `ACCEPTED_DOMAINS` | Auto-approve emails from these domains              |
-| `EMAIL_PROVIDER`   | `ses` or `smtp`                                     |
-| `COOKIE_DOMAIN`    | `.example.com` for multi-app SSO                    |
-| `WEBAUTHN_RP_ID`   | Domain for passkey registration                     |
+| Variable              | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| `SECRET_KEY`          | Signing key (min 32 chars)                          |
+| `DATABASE_URL`        | `sqlite+aiosqlite:///./gatekeeper.db` or PostgreSQL |
+| `ACCEPTED_DOMAINS`    | Auto-approve emails from these domains              |
+| `EMAIL_PROVIDER`      | `ses` or `smtp`                                     |
+| `COOKIE_DOMAIN`       | `.example.com` for multi-app SSO                    |
+| `GOOGLE_CLIENT_ID`    | Google OAuth client ID (optional)                   |
+| `GOOGLE_CLIENT_SECRET`| Google OAuth client secret (optional)               |
+| `WEBAUTHN_RP_ID`      | Domain for passkey registration                     |
 
 ## Production Deployment
 
@@ -120,11 +127,11 @@ See [`deployment/README.md`](deployment/README.md) for full guide.
 - Small to medium teams (5–100 users)
 - 3–10 internal tools needing protection
 - Self-hosted requirement (data residency, compliance)
-- No existing IdP, or want independence from it
+- Teams using Google Workspace (one-click SSO)
 
 **Not a fit:**
 
 - Enterprise scale (1000+ users, complex RBAC hierarchies)
 - Multi-tenant SaaS (customer-facing auth)
-- Existing Google Workspace/Okta SSO you want to use
+- Need for SAML/OIDC provider integration beyond Google
 
