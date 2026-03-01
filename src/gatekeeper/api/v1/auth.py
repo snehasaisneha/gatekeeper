@@ -30,6 +30,7 @@ from gatekeeper.schemas.auth import (
     UserAppAccessInfo,
     UserResponse,
 )
+from gatekeeper.services.audit import AuditService
 from gatekeeper.services.email import EmailService
 from gatekeeper.services.otp import OTPService
 from gatekeeper.services.passkey import PasskeyService
@@ -266,8 +267,11 @@ async def signin_verify(
         )
 
     otp_service = OTPService(db)
+    audit_service = AuditService(db)
     success, error_message = await otp_service.verify(email, data.code, OTPPurpose.SIGNIN)
     if not success:
+        await audit_service.log_auth_failed("otp", email, request, reason=error_message)
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_message or "Invalid or expired verification code.",
@@ -298,6 +302,10 @@ async def signin_verify(
     # Approved user - create session
     session_service = SessionService(db)
     session = await session_service.create(user)
+
+    # Log successful sign-in
+    await audit_service.log_auth_success("otp", user, request)
+
     await db.commit()  # Commit before responding so /auth/me can find the session
     set_session_cookie(response, session.token)
 
@@ -314,6 +322,7 @@ async def signin_verify(
     description="Clear the session cookie and invalidate the session.",
 )
 async def signout(
+    request: Request,
     response: Response,
     current_user: CurrentUser,
     db: DbSession,
@@ -326,6 +335,11 @@ async def signout(
         if token:
             session_service = SessionService(db)
             await session_service.delete(token)
+
+    # Log sign-out
+    audit_service = AuditService(db)
+    await audit_service.log_signout(current_user, request)
+    await db.commit()
 
     clear_session_cookie(response)
     return MessageResponse(message="Successfully signed out")
@@ -579,11 +593,12 @@ async def passkey_signin_options(
     description="Verify passkey authentication and create a session.",
 )
 async def passkey_signin_verify(
-    request: PasskeyVerifyRequest,
+    http_request: Request,
+    data: PasskeyVerifyRequest,
     response: Response,
     db: DbSession,
 ) -> AuthResponse:
-    credential_dict = request.credential.model_dump()
+    credential_dict = data.credential.model_dump()
     client_data = credential_dict.get("response", {}).get("clientDataJSON", "")
 
     try:
@@ -603,15 +618,24 @@ async def passkey_signin_verify(
         )
 
     passkey_service = PasskeyService(db)
+    audit_service = AuditService(db)
     user = await passkey_service.verify_authentication(credential_dict, challenge)
 
     if not user:
+        await audit_service.log_auth_failed(
+            "passkey", None, http_request, reason="Invalid credential"
+        )
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Passkey authentication failed.",
         )
 
     if user.status != UserStatus.APPROVED:
+        await audit_service.log_auth_failed(
+            "passkey", user.email, http_request, reason="Account not approved"
+        )
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account not approved.",
@@ -619,6 +643,10 @@ async def passkey_signin_verify(
 
     session_service = SessionService(db)
     session = await session_service.create(user)
+
+    # Log successful sign-in
+    await audit_service.log_auth_success("passkey", user, http_request)
+
     await db.commit()  # Commit before responding so /auth/me can find the session
     set_session_cookie(response, session.token)
 
@@ -839,6 +867,11 @@ async def google_callback(
         # Create session
         session_service = SessionService(db)
         session = await session_service.create(user)
+
+        # Log successful sign-in
+        audit_service = AuditService(db)
+        await audit_service.log_auth_success("google", user, request)
+
         await db.commit()
 
         # Create response with cookie
@@ -850,6 +883,12 @@ async def google_callback(
         return final_redirect
 
     except httpx.HTTPStatusError:
+        # Log failed OAuth
+        audit_service = AuditService(db)
+        await audit_service.log_auth_failed(
+            "google", None, request, reason="HTTP error from Google"
+        )
+        await db.commit()
         return RedirectResponse(
             url=f"{settings.frontend_url}/signin?error=oauth_failed",
             status_code=status.HTTP_302_FOUND,
@@ -1088,6 +1127,13 @@ async def github_callback(
         # Create session
         session_service = SessionService(db)
         session = await session_service.create(user)
+
+        # Log successful sign-in
+        audit_service = AuditService(db)
+        await audit_service.log_auth_success(
+            "github", user, request, details={"email_matched": email}
+        )
+
         await db.commit()
 
         # Create response with cookie
@@ -1099,6 +1145,12 @@ async def github_callback(
         return final_redirect
 
     except httpx.HTTPStatusError:
+        # Log failed OAuth
+        audit_service = AuditService(db)
+        await audit_service.log_auth_failed(
+            "github", None, request, reason="HTTP error from GitHub"
+        )
+        await db.commit()
         return RedirectResponse(
             url=f"{settings.frontend_url}/signin?error=oauth_failed",
             status_code=status.HTTP_302_FOUND,

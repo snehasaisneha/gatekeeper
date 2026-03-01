@@ -1,4 +1,6 @@
+import json
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -6,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.api.deps import AdminUser, DbSession
 from gatekeeper.models.app import App, UserAppAccess
+from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.schemas.admin import AdminCreateUser, AdminUpdateUser, PendingUserList, UserList
@@ -19,6 +22,7 @@ from gatekeeper.schemas.app import (
     BulkGrantAccess,
     GrantAccess,
 )
+from gatekeeper.schemas.audit import AuditLogList, AuditLogRead
 from gatekeeper.schemas.auth import ErrorResponse, MessageResponse
 from gatekeeper.schemas.domain import DomainCreate, DomainList, DomainRead
 from gatekeeper.schemas.user import UserRead
@@ -929,4 +933,75 @@ async def bulk_grant_access(
     return MessageResponse(
         message=f"Created {grants_created} access grant(s) for {len(request.emails)} user(s) "
         f"across {len(request.app_slugs)} app(s)"
+    )
+
+
+# ============================================================================
+# Audit Log Endpoints
+# ============================================================================
+
+
+@router.get(
+    "/audit-logs",
+    response_model=AuditLogList,
+    summary="List audit logs",
+    description="Query audit logs with optional filters. Admin only.",
+)
+async def list_audit_logs(
+    admin: AdminUser,
+    db: DbSession,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
+    event_type: str | None = Query(None, description="Filter by event type prefix"),
+    actor_email: str | None = Query(None, description="Filter by actor email"),
+    target_type: str | None = Query(None, description="Filter by target type"),
+    since: datetime | None = Query(None, description="Filter events after this timestamp"),
+    until: datetime | None = Query(None, description="Filter events before this timestamp"),
+) -> AuditLogList:
+    """Query audit logs with pagination and filters."""
+    # Build query
+    stmt = select(AuditLog)
+
+    if event_type:
+        stmt = stmt.where(AuditLog.event_type.startswith(event_type))
+    if actor_email:
+        stmt = stmt.where(AuditLog.actor_email == actor_email.lower())
+    if target_type:
+        stmt = stmt.where(AuditLog.target_type == target_type)
+    if since:
+        stmt = stmt.where(AuditLog.timestamp >= since)
+    if until:
+        stmt = stmt.where(AuditLog.timestamp <= until)
+
+    # Count total
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    # Paginate and order
+    stmt = stmt.order_by(AuditLog.timestamp.desc())
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
+
+    return AuditLogList(
+        logs=[
+            AuditLogRead(
+                id=log.id,
+                timestamp=log.timestamp,
+                actor_id=log.actor_id,
+                actor_email=log.actor_email,
+                event_type=log.event_type,
+                target_type=log.target_type,
+                target_id=log.target_id,
+                ip_address=log.ip_address,
+                user_agent=log.user_agent,
+                details=json.loads(log.details) if log.details else None,
+            )
+            for log in logs
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
     )

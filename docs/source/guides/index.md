@@ -19,6 +19,7 @@ Step-by-step instructions for common Gatekeeper tasks.
 
 - [Email setup](email.md) — Configure AWS SES or SMTP for login codes
 - [Deployment](deployment.md) — Deploy Gatekeeper to production
+- [Audit logs](audit-logs.md) — Track authentication and admin events
 
 ```{toctree}
 :hidden:
@@ -29,4 +30,5 @@ google-sso
 github-sso
 email
 deployment
+audit-logs
 ```
