@@ -85,6 +85,7 @@ async def _build_user_response(db: DbSession, user: User) -> UserResponse:
         is_seeded=user.is_seeded,
         is_internal=is_internal,
         notify_new_registrations=user.notify_new_registrations,
+        notify_all_registrations=user.notify_all_registrations,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -205,6 +206,19 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
         db.add(user)
         await db.flush()
         await db.refresh(user)
+
+        # Notify admins who want to know about ALL new registrations
+        email_service = EmailService(db=db)
+        admin_stmt = select(User).where(
+            User.is_admin == True,  # noqa: E712
+            User.notify_all_registrations == True,  # noqa: E712
+        )
+        admin_result = await db.execute(admin_stmt)
+        admins = admin_result.scalars().all()
+        for admin in admins:
+            await email_service.send_new_user_notification(
+                admin.email, email, is_auto_approved=(user.status == UserStatus.APPROVED)
+            )
 
     # Rejected users cannot sign in
     if user.status == UserStatus.REJECTED:
@@ -381,6 +395,8 @@ async def update_me(
     # Only admins can set notification preferences
     if data.notify_new_registrations is not None and current_user.is_admin:
         current_user.notify_new_registrations = data.notify_new_registrations
+    if data.notify_all_registrations is not None and current_user.is_admin:
+        current_user.notify_all_registrations = data.notify_all_registrations
     await db.flush()
     await db.refresh(current_user)
     return await _build_user_response(db, current_user)

@@ -116,8 +116,15 @@ export function SignInForm() {
           <p className="font-bold uppercase text-sm">⏳ PENDING APPROVAL</p>
         </div>
         <p className="text-sm">
-          Your account is waiting for admin approval. You will receive an email when approved.
+          Your account is waiting for admin approval. You'll receive an email once approved.
         </p>
+        <div className="border-l-4 border-gray-400 pl-4 py-2 bg-gray-50">
+          <p className="text-xs text-gray-600">
+            <strong>Check your inbox:</strong> We've sent you a confirmation email.
+            If you don't see it, check your spam folder and mark it as "not spam" —
+            otherwise you may miss the approval notification.
+          </p>
+        </div>
         <button
           onClick={() => window.location.href = '/signin'}
           className="w-full border-4 border-black bg-white text-black px-6 py-3 font-bold uppercase tracking-wider hover:bg-black hover:text-white transition-colors"

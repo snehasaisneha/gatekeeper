@@ -54,13 +54,24 @@ function SettingsPageContent({ appName }: SettingsPageProps) {
     setNameError(null);
   };
 
-  const handleToggleNotifications = async (enabled: boolean) => {
+  const handleTogglePendingNotifications = async (enabled: boolean) => {
     setIsSavingNotifications(true);
     try {
       const updatedUser = await api.auth.updateProfile({ notify_new_registrations: enabled });
       setCurrentUser(updatedUser);
     } catch (err) {
-      // Revert on error - the switch will reflect the current state
+      console.error('Failed to update notification preferences:', err);
+    } finally {
+      setIsSavingNotifications(false);
+    }
+  };
+
+  const handleToggleAllNotifications = async (enabled: boolean) => {
+    setIsSavingNotifications(true);
+    try {
+      const updatedUser = await api.auth.updateProfile({ notify_all_registrations: enabled });
+      setCurrentUser(updatedUser);
+    } catch (err) {
       console.error('Failed to update notification preferences:', err);
     } finally {
       setIsSavingNotifications(false);
@@ -165,17 +176,30 @@ function SettingsPageContent({ appName }: SettingsPageProps) {
                 <CardTitle>Notifications</CardTitle>
                 <CardDescription>Manage your notification preferences</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-sm font-medium">New User Registrations</Label>
+                    <Label className="text-sm font-medium">Pending Registrations</Label>
                     <p className="text-sm text-muted-foreground">
-                      Receive email notifications when new users sign up and require approval
+                      Notify me when users from non-approved domains sign up and need approval
                     </p>
                   </div>
                   <Switch
                     checked={currentUser.notify_new_registrations}
-                    onCheckedChange={handleToggleNotifications}
+                    onCheckedChange={handleTogglePendingNotifications}
+                    disabled={isSavingNotifications}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">All Registrations</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Notify me when any new user signs up, including auto-approved users
+                    </p>
+                  </div>
+                  <Switch
+                    checked={currentUser.notify_all_registrations}
+                    onCheckedChange={handleToggleAllNotifications}
                     disabled={isSavingNotifications}
                   />
                 </div>

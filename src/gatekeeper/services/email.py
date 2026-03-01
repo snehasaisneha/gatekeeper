@@ -387,6 +387,51 @@ Review in admin panel: {admin_url}
         """
         return await self._send_with_suppression_check(admin_email, subject, html_body, text_body)
 
+    async def send_new_user_notification(
+        self, admin_email: str, new_user_email: str, is_auto_approved: bool
+    ) -> bool:
+        """Notify admin of any new user registration (including auto-approved)."""
+        status = "AUTO-APPROVED" if is_auto_approved else "PENDING"
+        subject = f"{self.settings.app_name} — NEW USER: {status}"
+        admin_url = f"{self.settings.frontend_url}/admin"
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>{self._base_styles()}</style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">{self.settings.app_name}</div>
+                <div class="content">
+                    <p>A new user has registered:</p>
+                    <div class="info-box">
+                        <div class="info-box-header">User</div>
+                        <span class="highlight">{new_user_email}</span>
+                    </div>
+                    <div class="info-box">
+                        <div class="info-box-header">Status</div>
+                        <span class="highlight">{status}</span>
+                    </div>
+                    <a href="{admin_url}" class="button">View in Admin Panel</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        text_body = f"""
+{self.settings.app_name.upper()}
+
+NEW USER REGISTERED
+
+User: {new_user_email}
+Status: {status}
+
+View in admin panel: {admin_url}
+        """
+        return await self._send_with_suppression_check(admin_email, subject, html_body, text_body)
+
     async def send_super_admin_welcome(self, to_email: str, invited_by: str) -> bool:
         """Send welcome email when a super admin account is created."""
         subject = f"{self.settings.app_name} — SUPER ADMIN ACCESS"

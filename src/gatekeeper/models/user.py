@@ -28,6 +28,7 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False, nullable=False)
     is_seeded: Mapped[bool] = mapped_column(default=False, nullable=False)
     notify_new_registrations: Mapped[bool] = mapped_column(default=False, nullable=False)
+    notify_all_registrations: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), nullable=False
     )

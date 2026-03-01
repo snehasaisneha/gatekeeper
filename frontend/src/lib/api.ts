@@ -9,6 +9,7 @@ export interface User {
   is_seeded: boolean;
   is_internal: boolean;
   notify_new_registrations: boolean;
+  notify_all_registrations: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -182,7 +183,11 @@ export const api = {
 
     me: () => request<User>('/auth/me'),
 
-    updateProfile: (data: { name?: string; notify_new_registrations?: boolean }) =>
+    updateProfile: (data: {
+      name?: string;
+      notify_new_registrations?: boolean;
+      notify_all_registrations?: boolean;
+    }) =>
       request<User>('/auth/me', {
         method: 'PATCH',
         body: JSON.stringify(data),
