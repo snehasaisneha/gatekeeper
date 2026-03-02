@@ -893,8 +893,13 @@ async def google_callback(
         await db.commit()
 
         # Create response with cookie
+        # Use redirect_url directly if it's an absolute URL, otherwise prepend frontend_url
+        if redirect_url.startswith(("http://", "https://")):
+            final_url = redirect_url
+        else:
+            final_url = f"{settings.frontend_url}{redirect_url}"
         final_redirect = RedirectResponse(
-            url=f"{settings.frontend_url}{redirect_url}",
+            url=final_url,
             status_code=status.HTTP_302_FOUND,
         )
         set_session_cookie(final_redirect, session.token)
@@ -1155,8 +1160,13 @@ async def github_callback(
         await db.commit()
 
         # Create response with cookie
+        # Use redirect_url directly if it's an absolute URL, otherwise prepend frontend_url
+        if redirect_url.startswith(("http://", "https://")):
+            final_url = redirect_url
+        else:
+            final_url = f"{settings.frontend_url}{redirect_url}"
         final_redirect = RedirectResponse(
-            url=f"{settings.frontend_url}{redirect_url}",
+            url=final_url,
             status_code=status.HTTP_302_FOUND,
         )
         set_session_cookie(final_redirect, session.token)
