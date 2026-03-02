@@ -143,8 +143,11 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
         return 302 https://${gkHost}/signout?redirect=$scheme://$host/;
     }
 
-    # Convenience alias for logout
+    # Convenience aliases for logout
     location = /logout {
+        return 302 /_gk/logout;
+    }
+    location = /signout {
         return 302 /_gk/logout;
     }
 
@@ -454,8 +457,9 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                   <div className="bg-muted/50 border rounded-lg p-3">
                     <p className="text-sm text-muted-foreground">
                       <strong className="text-foreground">Logout:</strong> Link to{' '}
-                      <code className="bg-muted px-1 rounded text-xs">/logout</code>{' '}
-                      (or <code className="bg-muted px-1 rounded text-xs">/_gk/logout</code>)
+                      <code className="bg-muted px-1 rounded text-xs">/logout</code>,{' '}
+                      <code className="bg-muted px-1 rounded text-xs">/signout</code>, or{' '}
+                      <code className="bg-muted px-1 rounded text-xs">/_gk/logout</code>{' '}
                       to sign users out via Gatekeeper.
                     </p>
                   </div>
