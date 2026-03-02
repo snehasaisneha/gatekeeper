@@ -9,7 +9,7 @@ import { AddUserModal } from './AddUserModal';
 import { DomainManagement } from './DomainManagement';
 import { BrandingSettings } from './BrandingSettings';
 import { api } from '@/lib/api';
-import { UserPlus, AppWindow, Users, Clock, Globe, Palette } from 'lucide-react';
+import { UserPlus, AppWindow, Users, Clock, Globe, Palette, ExternalLink } from 'lucide-react';
 
 type TabType = 'users' | 'apps' | 'domains' | 'branding';
 
@@ -56,9 +56,19 @@ export function AdminDashboard() {
   return (
     <div className="space-y-6" key={refreshKey}>
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Super Admin</h1>
-        <p className="text-muted-foreground text-sm">Manage users and apps across the platform</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Super Admin</h1>
+          <p className="text-muted-foreground text-sm">Manage users and apps across the platform</p>
+        </div>
+        <a
+          href="https://gatekeeper-gk.readthedocs.io/en/latest/guides/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-primary hover:underline flex items-center gap-1"
+        >
+          Admin Guide <ExternalLink className="h-3 w-3" />
+        </a>
       </div>
 
       {/* Stats Overview */}

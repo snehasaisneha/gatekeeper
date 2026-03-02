@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useAuth } from './AuthContext';
 import { api } from '@/lib/api';
 import { useBranding } from '@/lib/branding';
+import { ExternalLink } from 'lucide-react';
 
 interface TopBarProps {
   appName?: string;
@@ -103,6 +104,16 @@ export function TopBar({ appName = 'Gatekeeper' }: TopBarProps) {
                       → Admin
                     </a>
                   )}
+
+                  <a
+                    href="https://gatekeeper-gk.readthedocs.io"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-1 px-4 py-2 font-bold uppercase tracking-wider text-sm hover:bg-black hover:text-white transition-colors"
+                  >
+                    → Docs <ExternalLink className="h-3 w-3" />
+                  </a>
                 </div>
 
                 <div className="border-t-4 p-2" style={{ borderColor: 'var(--accent-color)' }}>

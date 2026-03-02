@@ -36,9 +36,20 @@ const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
         </div>
 
         <!-- Footer text -->
-        <p class="text-center text-xs text-gray-500 mt-8 uppercase tracking-wider">
-          Secured by {appName}
-        </p>
+        <div class="text-center mt-8 space-y-2">
+          <p class="text-xs text-gray-500 uppercase tracking-wider">
+            Secured by {appName}
+          </p>
+          <a
+            href="https://gatekeeper-gk.readthedocs.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-block text-xs uppercase tracking-wider hover:underline transition-colors"
+            style="color: var(--accent-color);"
+          >
+            Documentation →
+          </a>
+        </div>
       </div>
     </main>
   </div>
