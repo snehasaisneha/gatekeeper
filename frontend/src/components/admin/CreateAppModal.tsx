@@ -140,7 +140,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
     # Logout: redirect to Gatekeeper signout with return URL
     location = /_gk/logout {
-        return 302 https://${gkHost}/signout?redirect=$scheme://$host/;
+        return 302 https://${gkHost}/signout?redirect=https://$host/;
     }
 
     # Convenience aliases for logout
