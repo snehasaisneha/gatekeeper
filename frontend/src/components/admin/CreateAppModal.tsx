@@ -122,8 +122,6 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     const gkUrl = getGatekeeperUrl();
     // Extract just the host from gkUrl for redirects
     const gkHost = gkUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    // Extract the internal gatekeeper IP/port - use the URL as-is for proxy_pass
-    const gkInternal = gkUrl.replace(/^https?:\/\//, '');
 
     return `server {
     listen 80;
@@ -143,6 +141,11 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     # Logout: redirect to Gatekeeper signout with return URL
     location = /_gk/logout {
         return 302 https://${gkHost}/signout?redirect=$scheme://$host/;
+    }
+
+    # Convenience alias for logout
+    location = /logout {
+        return 302 /_gk/logout;
     }
 
     # All requests: validate auth, then proxy to your app
@@ -450,11 +453,10 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                   {/* Logout note */}
                   <div className="bg-muted/50 border rounded-lg p-3">
                     <p className="text-sm text-muted-foreground">
-                      <strong className="text-foreground">Logout:</strong> Add a logout link pointing to{' '}
-                      <code className="bg-muted px-1 rounded text-xs">
-                        /_gk/logout
-                      </code>{' '}
-                      which redirects through Gatekeeper and back to your app.
+                      <strong className="text-foreground">Logout:</strong> Link to{' '}
+                      <code className="bg-muted px-1 rounded text-xs">/logout</code>{' '}
+                      (or <code className="bg-muted px-1 rounded text-xs">/_gk/logout</code>)
+                      to sign users out via Gatekeeper.
                     </p>
                   </div>
                 </>
