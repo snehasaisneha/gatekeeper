@@ -24,7 +24,10 @@ import Layout from '../layouts/Layout.astro';
     if (statusEl) {
       statusEl.textContent = 'Signed out. Redirecting...';
     }
-    window.location.href = '/signin';
+    // Check for redirect parameter, otherwise go to signin
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get('redirect');
+    window.location.href = redirect || '/signin';
   }
   signout();
 </script>
