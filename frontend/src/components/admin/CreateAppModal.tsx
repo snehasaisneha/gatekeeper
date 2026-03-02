@@ -116,96 +116,61 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     }
   };
 
-  // Nginx config template
+  // Nginx config template - matches real production implementation
   const getNginxConfig = () => {
     const domain = getAppDomain() || 'myapp.example.com';
     const gkUrl = getGatekeeperUrl();
+    // Extract just the host from gkUrl for redirects
+    const gkHost = gkUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    // Extract the internal gatekeeper IP/port - use the URL as-is for proxy_pass
+    const gkInternal = gkUrl.replace(/^https?:\/\//, '');
 
     return `server {
     listen 80;
     server_name ${domain};
 
-    # Redirect HTTP to HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name ${domain};
-
-    # SSL certificates (use certbot or your preferred method)
-    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
-
-    # Auth request to Gatekeeper
-    auth_request /gatekeeper-auth;
-    auth_request_set $auth_status $upstream_status;
-
-    # Gatekeeper auth endpoint
-    location = /gatekeeper-auth {
+    # Gatekeeper auth validation endpoint
+    location = /_gk/validate {
         internal;
-        proxy_pass ${gkUrl}/api/v1/verify?app=${slug || 'myapp'};
+        proxy_pass ${gkUrl}/api/v1/auth/validate;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         proxy_set_header X-Original-URI $request_uri;
-        proxy_set_header X-Original-Host $host;
+        proxy_set_header X-GK-App ${slug || 'myapp'};
         proxy_set_header Cookie $http_cookie;
     }
 
-    # Redirect to Gatekeeper login on 401
-    error_page 401 = @gatekeeper_login;
-    location @gatekeeper_login {
-        return 302 ${gkUrl}/login?app=${slug || 'myapp'}&redirect=$scheme://$host$request_uri;
+    # Logout: redirect to Gatekeeper signout with return URL
+    location = /_gk/logout {
+        return 302 https://${gkHost}/signout?redirect=$scheme://$host/;
     }
 
-    # Your app
+    # All requests: validate auth, then proxy to your app
     location / {
+        auth_request /_gk/validate;
+        auth_request_set $auth_user $upstream_http_x_auth_user;
+
         proxy_pass http://${privateIp}:${appPort};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Auth-User $auth_user;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+
+        error_page 401 = @login;
+        error_page 403 = @denied;
     }
+
+    # Redirect to login on 401 (not authenticated)
+    location @login {
+        return 302 https://${gkHost}/signin?redirect=$scheme://$host$request_uri;
+    }
+
+    # Redirect to request access on 403 (no permission)
+    location @denied {
+        return 302 https://${gkHost}/request-access?app=${slug || 'myapp'};
+    }
+}
+
 }`;
-  };
-
-  const installNginxCmd = `# Install Nginx (Ubuntu/Debian)
-sudo apt update && sudo apt install -y nginx
-
-# Or on macOS with Homebrew
-brew install nginx`;
-
-  const createSiteCmd = () => {
-    const domain = getAppDomain() || 'myapp.example.com';
-    return `# Create the config file
-sudo nano /etc/nginx/sites-available/${domain}
-
-# Paste the Nginx config below, then save and exit (Ctrl+X, Y, Enter)`;
-  };
-
-  const enableSiteCmd = () => {
-    const domain = getAppDomain() || 'myapp.example.com';
-    return `# Create symlink to enable the site
-sudo ln -s /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/
-
-# Test Nginx configuration
-sudo nginx -t
-
-# Reload Nginx
-sudo systemctl reload nginx`;
-  };
-
-  const sslCmd = () => {
-    const domain = getAppDomain() || 'myapp.example.com';
-    return `# Install Certbot if not already installed
-sudo apt install -y certbot python3-certbot-nginx
-
-# Get SSL certificate
-sudo certbot --nginx -d ${domain}`;
   };
 
   const CodeBlock = ({
@@ -386,6 +351,17 @@ sudo certbot --nginx -d ${domain}`;
                     </div>
                   </div>
 
+                  {/* DNS instruction - moved to top */}
+                  <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>First:</strong> Point{' '}
+                      <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded text-xs">
+                        {getAppDomain()}
+                      </code>{' '}
+                      to your server's IP address in DNS.
+                    </p>
+                  </div>
+
                   {/* App-specific config inputs */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -397,7 +373,7 @@ sudo certbot --nginx -d ${domain}`;
                         placeholder="127.0.0.1"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Where your app runs (localhost or internal IP)
+                        Internal IP where your app runs
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -412,46 +388,73 @@ sudo certbot --nginx -d ${domain}`;
                     </div>
                   </div>
 
+                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      <strong>Serving static files?</strong> Run a simple server in your docs folder:
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      <CodeBlock code="python -m http.server 8000" id="static-python" />
+                      <p className="text-xs text-blue-600 dark:text-blue-400">or</p>
+                      <CodeBlock code="npx serve -p 8000" id="static-npx" />
+                    </div>
+                  </div>
+
                   {/* Step 1: Install Nginx */}
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm">1. Install Nginx</h4>
-                    <CodeBlock code={installNginxCmd} id="install" />
+                  <div className="space-y-3">
+                    <h3 className="font-semibold">1. Install Nginx</h3>
+                    <p className="text-sm text-muted-foreground">Update packages and install nginx:</p>
+                    <CodeBlock code="sudo apt update && sudo apt install -y nginx" id="install" />
                   </div>
 
                   {/* Step 2: Create config file */}
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm">2. Create Configuration File</h4>
-                    <CodeBlock code={createSiteCmd()} id="create-site" />
+                  <div className="space-y-3">
+                    <h3 className="font-semibold">2. Create Configuration File</h3>
+                    <p className="text-sm text-muted-foreground">Open the nginx config file:</p>
+                    <CodeBlock code={`sudo nano /etc/nginx/sites-available/${getAppDomain()}`} id="create-site" />
                   </div>
 
                   {/* Step 3: Nginx config */}
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm">3. Nginx Configuration</h4>
-                    <p className="text-xs text-muted-foreground">
-                      Copy this configuration into your site file:
+                  <div className="space-y-3">
+                    <h3 className="font-semibold">3. Nginx Configuration</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Paste this configuration, then save with Ctrl+X, Y, Enter:
                     </p>
                     <CodeBlock code={getNginxConfig()} id="nginx-config" />
                   </div>
 
                   {/* Step 4: Enable site */}
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm">4. Enable Site & Reload</h4>
-                    <CodeBlock code={enableSiteCmd()} id="enable-site" />
+                  <div className="space-y-3">
+                    <h3 className="font-semibold">4. Enable Site</h3>
+
+                    <p className="text-sm text-muted-foreground">Create symlink to enable the site:</p>
+                    <CodeBlock code={`sudo ln -s /etc/nginx/sites-available/${getAppDomain()} /etc/nginx/sites-enabled/`} id="symlink" />
+
+                    <p className="text-sm text-muted-foreground">Test nginx configuration:</p>
+                    <CodeBlock code="sudo nginx -t" id="nginx-test" />
+
+                    <p className="text-sm text-muted-foreground">Reload nginx:</p>
+                    <CodeBlock code="sudo systemctl reload nginx" id="nginx-reload" />
                   </div>
 
                   {/* Step 5: SSL */}
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm">5. Set Up SSL (Recommended)</h4>
-                    <CodeBlock code={sslCmd()} id="ssl" />
+                  <div className="space-y-3">
+                    <h3 className="font-semibold">5. Set Up SSL</h3>
+
+                    <p className="text-sm text-muted-foreground">Install certbot:</p>
+                    <CodeBlock code="sudo apt install -y certbot" id="certbot-install" />
+
+                    <p className="text-sm text-muted-foreground">Get SSL certificate:</p>
+                    <CodeBlock code={`sudo certbot --nginx -d ${getAppDomain()}`} id="certbot-run" />
                   </div>
 
-                  <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      <strong>Note:</strong> Make sure your DNS points{' '}
-                      <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded text-xs">
-                        {getAppDomain()}
+                  {/* Logout note */}
+                  <div className="bg-muted/50 border rounded-lg p-3">
+                    <p className="text-sm text-muted-foreground">
+                      <strong className="text-foreground">Logout:</strong> Add a logout link pointing to{' '}
+                      <code className="bg-muted px-1 rounded text-xs">
+                        /_gk/logout
                       </code>{' '}
-                      to your server's IP address before setting up SSL.
+                      which redirects through Gatekeeper and back to your app.
                     </p>
                   </div>
                 </>
