@@ -4,23 +4,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, X, Copy, Check, ExternalLink } from 'lucide-react';
+import { Loader2, X, Copy, Check, ExternalLink, ArrowRight, ArrowLeft } from 'lucide-react';
 
 interface CreateAppModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
 
-type TabId = 'details' | 'nginx';
+type Step = 1 | 2;
 
 export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
-  const [activeTab, setActiveTab] = React.useState<TabId>('details');
+  const [step, setStep] = React.useState<Step>(1);
 
   // Form state
   const [slug, setSlug] = React.useState('');
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
-  const [appUrl, setAppUrl] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -49,8 +48,26 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     fetchConfig();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Generate domain from slug and cookie_domain
+  const getCookieDomain = () => config?.cookie_domain || '.example.com';
+  const getBaseDomain = () => {
+    const domain = getCookieDomain();
+    return domain.startsWith('.') ? domain.slice(1) : domain;
+  };
+  const getAppDomain = () => {
+    const baseDomain = getBaseDomain();
+    return slug ? `${slug}.${baseDomain}` : null;
+  };
+  const getAppUrl = () => {
+    const domain = getAppDomain();
+    return domain ? `https://${domain}` : null;
+  };
+
+  const getGatekeeperUrl = () => config?.app_url || 'https://auth.example.com';
+
+  const handleSubmit = async () => {
+    if (!slug || !name) return;
+
     setIsSubmitting(true);
     setError(null);
 
@@ -59,7 +76,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
         slug,
         name,
         description: description || undefined,
-        app_url: appUrl || undefined,
+        app_url: getAppUrl() || undefined,
       });
       onSuccess();
     } catch (err) {
@@ -73,13 +90,21 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     }
   };
 
+  const handleNext = () => {
+    if (!slug || !name) return;
+    setStep(2);
+  };
+
+  const handleBack = () => {
+    setStep(1);
+  };
+
   const copyToClipboard = async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      // Fallback for older browsers
       const textarea = document.createElement('textarea');
       textarea.value = text;
       document.body.appendChild(textarea);
@@ -91,20 +116,9 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     }
   };
 
-  // Generate domain from slug and cookie_domain
-  const getCookieDomain = () => config?.cookie_domain || '.example.com';
-  const getAppDomain = () => {
-    const domain = getCookieDomain();
-    // Remove leading dot for subdomain
-    const baseDomain = domain.startsWith('.') ? domain.slice(1) : domain;
-    return slug ? `${slug}.${baseDomain}` : `myapp.${baseDomain}`;
-  };
-
-  const getGatekeeperUrl = () => config?.app_url || 'https://auth.example.com';
-
   // Nginx config template
   const getNginxConfig = () => {
-    const domain = getAppDomain();
+    const domain = getAppDomain() || 'myapp.example.com';
     const gkUrl = getGatekeeperUrl();
 
     return `server {
@@ -166,7 +180,7 @@ sudo apt update && sudo apt install -y nginx
 brew install nginx`;
 
   const createSiteCmd = () => {
-    const domain = getAppDomain();
+    const domain = getAppDomain() || 'myapp.example.com';
     return `# Create the config file
 sudo nano /etc/nginx/sites-available/${domain}
 
@@ -174,7 +188,7 @@ sudo nano /etc/nginx/sites-available/${domain}
   };
 
   const enableSiteCmd = () => {
-    const domain = getAppDomain();
+    const domain = getAppDomain() || 'myapp.example.com';
     return `# Create symlink to enable the site
 sudo ln -s /etc/nginx/sites-available/${domain} /etc/nginx/sites-enabled/
 
@@ -186,7 +200,7 @@ sudo systemctl reload nginx`;
   };
 
   const sslCmd = () => {
-    const domain = getAppDomain();
+    const domain = getAppDomain() || 'myapp.example.com';
     return `# Install Certbot if not already installed
 sudo apt install -y certbot python3-certbot-nginx
 
@@ -225,6 +239,8 @@ sudo certbot --nginx -d ${domain}`;
     </div>
   );
 
+  const canProceed = slug.length > 0 && name.length > 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
@@ -237,78 +253,93 @@ sudo certbot --nginx -d ${domain}`;
           <X className="h-5 w-5" />
         </button>
 
-        {/* Header */}
-        <div className="p-6 pb-0">
+        {/* Header with step indicator */}
+        <div className="p-6 pb-4">
           <h2 className="text-lg font-semibold">Create New App</h2>
-          <p className="text-sm text-muted-foreground">
-            Set up a new app with optional Nginx configuration.
-          </p>
-        </div>
-
-        {/* Tabs */}
-        <div className="px-6 pt-4">
-          <div className="flex border-b">
-            <button
-              onClick={() => setActiveTab('details')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'details'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+          <div className="flex items-center gap-2 mt-3">
+            <div
+              className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium ${
+                step === 1
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-primary/20 text-primary'
               }`}
             >
+              1
+            </div>
+            <span className={`text-sm ${step === 1 ? 'font-medium' : 'text-muted-foreground'}`}>
               App Details
-            </button>
-            <button
-              onClick={() => setActiveTab('nginx')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'nginx'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+            </span>
+            <div className="w-8 h-px bg-border" />
+            <div
+              className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium ${
+                step === 2
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
               }`}
             >
-              Pre-Setup (Nginx)
-            </button>
+              2
+            </div>
+            <span className={`text-sm ${step === 2 ? 'font-medium' : 'text-muted-foreground'}`}>
+              Nginx Setup
+            </span>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeTab === 'details' && (
-            <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {step === 1 && (
+            <div className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="slug">Slug</Label>
-                  <Input
-                    id="slug"
-                    value={slug}
-                    onChange={(e) =>
-                      setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
-                    }
-                    placeholder="my-app"
-                    required
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Lowercase, alphanumeric and hyphens only
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="name">Display Name</Label>
-                  <Input
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="My App"
-                    required
-                    disabled={isSubmitting}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="slug">Slug</Label>
+                <Input
+                  id="slug"
+                  value={slug}
+                  onChange={(e) =>
+                    setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+                  }
+                  placeholder="my-app"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lowercase, alphanumeric and hyphens only
+                </p>
+
+                {/* URL Preview */}
+                {!isLoadingConfig && (
+                  <div className="mt-3 p-3 bg-muted/50 rounded-md border">
+                    <p className="text-xs text-muted-foreground mb-1">Your app will be available at:</p>
+                    <p className="font-mono text-sm">
+                      {slug ? (
+                        <span className="text-foreground">
+                          https://<span className="text-primary font-semibold">{slug}</span>.{getBaseDomain()}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          https://<span className="italic">your-slug</span>.{getBaseDomain()}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="name">Display Name</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="My App"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The name shown to users in the dashboard
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -318,52 +349,31 @@ sudo certbot --nginx -d ${domain}`;
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="A brief description of your app"
-                  disabled={isSubmitting}
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="app-url">App URL (optional)</Label>
-                <Input
-                  id="app-url"
-                  type="url"
-                  value={appUrl}
-                  onChange={(e) => setAppUrl(e.target.value)}
-                  placeholder="https://myapp.example.com"
-                  disabled={isSubmitting}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Direct link to the app for users
-                </p>
-              </div>
-
-              <div className="flex gap-2 justify-end pt-2">
-                <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Create App
-                </Button>
-              </div>
-            </form>
+            </div>
           )}
 
-          {activeTab === 'nginx' && (
+          {step === 2 && (
             <div className="space-y-6">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
               {isLoadingConfig ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
               ) : (
                 <>
-                  <div className="bg-muted/50 rounded-lg p-4 border">
+                  {/* Summary card */}
+                  <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h3 className="font-medium text-sm">Nginx Setup Instructions</h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Configure Nginx to protect your app with Gatekeeper authentication.
-                        </p>
+                        <p className="font-medium">{name}</p>
+                        <p className="text-sm text-muted-foreground font-mono">{getAppUrl()}</p>
                       </div>
                       <a
                         href="https://gatekeeper-gk.readthedocs.io/en/latest/getting-started/first-app.html"
@@ -402,16 +412,6 @@ sudo certbot --nginx -d ${domain}`;
                     </div>
                   </div>
 
-                  <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2">
-                    Config will use: <code className="bg-muted px-1 rounded">{getAppDomain()}</code>
-                    {slug && (
-                      <span>
-                        {' '}
-                        (based on slug: <code className="bg-muted px-1 rounded">{slug}</code>)
-                      </span>
-                    )}
-                  </div>
-
                   {/* Step 1: Install Nginx */}
                   <div className="space-y-2">
                     <h4 className="font-medium text-sm">1. Install Nginx</h4>
@@ -441,7 +441,7 @@ sudo certbot --nginx -d ${domain}`;
 
                   {/* Step 5: SSL */}
                   <div className="space-y-2">
-                    <h4 className="font-medium text-sm">5. Set Up SSL (Optional but Recommended)</h4>
+                    <h4 className="font-medium text-sm">5. Set Up SSL (Recommended)</h4>
                     <CodeBlock code={sslCmd()} id="ssl" />
                   </div>
 
@@ -457,6 +457,32 @@ sudo certbot --nginx -d ${domain}`;
                 </>
               )}
             </div>
+          )}
+        </div>
+
+        {/* Footer with navigation */}
+        <div className="border-t p-4 flex justify-between">
+          {step === 1 ? (
+            <>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button onClick={handleNext} disabled={!canProceed}>
+                Next: Nginx Setup
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+              <Button onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create App
+              </Button>
+            </>
           )}
         </div>
       </div>
