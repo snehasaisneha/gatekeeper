@@ -103,6 +103,12 @@ export interface Branding {
   accent_hex: string;
 }
 
+// Deployment config types
+export interface DeploymentConfig {
+  cookie_domain: string | null;
+  app_url: string;
+}
+
 export interface BrandingAdmin extends Branding {
   updated_at: string | null;
   updated_by: string | null;
@@ -341,6 +347,9 @@ export const api = {
       }),
 
     getAccentPresets: () => request<{ presets: AccentPreset[] }>('/admin/branding/presets'),
+
+    // Deployment config
+    getDeploymentConfig: () => request<DeploymentConfig>('/admin/config'),
   },
 };
 

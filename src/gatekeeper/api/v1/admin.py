@@ -7,12 +7,19 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.api.deps import AdminUser, DbSession
+from gatekeeper.config import get_settings
 from gatekeeper.models.app import App, UserAppAccess
 from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.branding import Branding
 from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.user import User, UserStatus
-from gatekeeper.schemas.admin import AdminCreateUser, AdminUpdateUser, PendingUserList, UserList
+from gatekeeper.schemas.admin import (
+    AdminCreateUser,
+    AdminUpdateUser,
+    DeploymentConfig,
+    PendingUserList,
+    UserList,
+)
 from gatekeeper.schemas.app import (
     AppCreate,
     AppDetail,
@@ -1098,3 +1105,22 @@ async def update_branding(
 )
 async def get_accent_presets(admin: AdminUser) -> AccentPresetsResponse:
     return AccentPresetsResponse.from_presets()
+
+
+# ============================================================================
+# Deployment Config Endpoint
+# ============================================================================
+
+
+@router.get(
+    "/config",
+    response_model=DeploymentConfig,
+    summary="Get deployment configuration",
+    description="Get deployment config for Nginx setup instructions. Admin only.",
+)
+async def get_deployment_config(admin: AdminUser) -> DeploymentConfig:
+    settings = get_settings()
+    return DeploymentConfig(
+        cookie_domain=settings.cookie_domain,
+        app_url=settings.app_url,
+    )

@@ -89,3 +89,19 @@ class PendingUserList(BaseModel):
             }
         }
     }
+
+
+class DeploymentConfig(BaseModel):
+    """Deployment configuration for Nginx setup instructions."""
+
+    cookie_domain: str | None = Field(None, description="Root cookie domain (e.g., .example.com)")
+    app_url: str = Field(..., description="Backend API URL (e.g., https://auth.example.com)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "cookie_domain": ".example.com",
+                "app_url": "https://auth.example.com",
+            }
+        }
+    }

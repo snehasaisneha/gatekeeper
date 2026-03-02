@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +20,7 @@ import {
   Settings,
   Pencil,
 } from 'lucide-react';
+import { CreateAppModal } from './CreateAppModal';
 
 interface AppManagementProps {
   onRefresh?: () => void;
@@ -31,14 +31,8 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Create app form
-  const [showCreateForm, setShowCreateForm] = React.useState(false);
-  const [newSlug, setNewSlug] = React.useState('');
-  const [newName, setNewName] = React.useState('');
-  const [newDescription, setNewDescription] = React.useState('');
-  const [newAppUrl, setNewAppUrl] = React.useState('');
-  const [isCreating, setIsCreating] = React.useState(false);
-  const [createError, setCreateError] = React.useState<string | null>(null);
+  // Create app modal
+  const [showCreateModal, setShowCreateModal] = React.useState(false);
 
   // Expanded app details
   const [expandedApp, setExpandedApp] = React.useState<string | null>(null);
@@ -152,34 +146,10 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
     }
   };
 
-  const handleCreateApp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsCreating(true);
-    setCreateError(null);
-
-    try {
-      await api.admin.createApp({
-        slug: newSlug,
-        name: newName,
-        description: newDescription || undefined,
-        app_url: newAppUrl || undefined,
-      });
-      setNewSlug('');
-      setNewName('');
-      setNewDescription('');
-      setNewAppUrl('');
-      setShowCreateForm(false);
-      await loadApps();
-      onRefresh?.();
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setCreateError(err.message);
-      } else {
-        setCreateError('Failed to create app');
-      }
-    } finally {
-      setIsCreating(false);
-    }
+  const handleCreateSuccess = async () => {
+    setShowCreateModal(false);
+    await loadApps();
+    onRefresh?.();
   };
 
   const handleDeleteApp = async (slug: string) => {
@@ -286,79 +256,17 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
           <AppWindow className="h-5 w-5" />
           <span className="font-medium">Apps ({apps.length})</span>
         </div>
-        <Button size="sm" onClick={() => setShowCreateForm(!showCreateForm)}>
+        <Button size="sm" onClick={() => setShowCreateModal(true)}>
           <Plus className="h-4 w-4 mr-1" />
           Add App
         </Button>
       </div>
 
-      {showCreateForm && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Create New App</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreateApp} className="space-y-4">
-              {createError && (
-                <Alert variant="destructive">
-                  <AlertDescription>{createError}</AlertDescription>
-                </Alert>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="app-slug">Slug</Label>
-                  <Input
-                    id="app-slug"
-                    value={newSlug}
-                    onChange={(e) => setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                    placeholder="my-app"
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">Lowercase, alphanumeric and hyphens only</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="app-name">Display Name</Label>
-                  <Input
-                    id="app-name"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="My App"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="app-description">Description (optional)</Label>
-                <Input
-                  id="app-description"
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="A brief description of your app"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="app-url">App URL (optional)</Label>
-                <Input
-                  id="app-url"
-                  type="url"
-                  value={newAppUrl}
-                  onChange={(e) => setNewAppUrl(e.target.value)}
-                  placeholder="https://myapp.example.com"
-                />
-                <p className="text-xs text-muted-foreground">Direct link to the app for users</p>
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" disabled={isCreating}>
-                  {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Create App
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowCreateForm(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+      {showCreateModal && (
+        <CreateAppModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={handleCreateSuccess}
+        />
       )}
 
       {apps.length === 0 ? (
