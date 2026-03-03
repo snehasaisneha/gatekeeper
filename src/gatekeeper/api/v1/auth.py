@@ -73,6 +73,15 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=COOKIE_NAME, domain=settings.cookie_domain, path="/")
 
 
+def create_redirect(url: str, status_code: int = status.HTTP_302_FOUND) -> RedirectResponse:
+    """Create a redirect response with no-cache headers to prevent browser caching."""
+    response = RedirectResponse(url=url, status_code=status_code)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 async def _build_user_response(db: DbSession, user: User) -> UserResponse:
     """Build UserResponse with is_internal computed."""
     is_internal = await is_internal_user(db, user.email)
@@ -340,7 +349,7 @@ async def signin_verify(
 async def signout(
     request: Request,
     response: Response,
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
     db: DbSession,
     session: str | None = None,
 ) -> MessageResponse:
@@ -352,11 +361,13 @@ async def signout(
             session_service = SessionService(db)
             await session_service.delete(token)
 
-    # Log sign-out
-    audit_service = AuditService(db)
-    await audit_service.log_signout(current_user, request)
-    await db.commit()
+    # Log sign-out if user was authenticated
+    if current_user:
+        audit_service = AuditService(db)
+        await audit_service.log_signout(current_user, request)
+        await db.commit()
 
+    # Always clear the cookie, even if session was invalid
     clear_session_cookie(response)
     return MessageResponse(message="Successfully signed out")
 
@@ -781,24 +792,15 @@ async def google_callback(
 ) -> RedirectResponse:
     # Handle OAuth errors
     if error:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error={error}",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error={error}")
 
     if not code or not state:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=missing_params",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=missing_params")
 
     # Verify state
     redirect_url = _oauth_states.pop(state, None)
     if redirect_url is None:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=invalid_state",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=invalid_state")
 
     try:
         # Exchange code for tokens
@@ -827,10 +829,7 @@ async def google_callback(
 
         email = userinfo.get("email", "").lower()
         if not email:
-            return RedirectResponse(
-                url=f"{settings.frontend_url}/signin?error=no_email",
-                status_code=status.HTTP_302_FOUND,
-            )
+            return create_redirect(f"{settings.frontend_url}/signin?error=no_email")
 
         # Find or create user
         stmt = select(User).where(User.email == email)
@@ -852,10 +851,7 @@ async def google_callback(
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
-            return RedirectResponse(
-                url=f"{settings.frontend_url}/signin?error=account_rejected",
-                status_code=status.HTTP_302_FOUND,
-            )
+            return create_redirect(f"{settings.frontend_url}/signin?error=account_rejected")
 
         # Handle pending users
         if user.status == UserStatus.PENDING:
@@ -873,10 +869,7 @@ async def google_callback(
                 await email_service.send_pending_registration_notification(admin.email, email)
 
             await db.commit()
-            return RedirectResponse(
-                url=f"{settings.frontend_url}/signin?pending=true",
-                status_code=status.HTTP_302_FOUND,
-            )
+            return create_redirect(f"{settings.frontend_url}/signin?pending=true")
 
         # Update name from Google if not set
         if not user.name and userinfo.get("name"):
@@ -898,10 +891,7 @@ async def google_callback(
             final_url = redirect_url
         else:
             final_url = f"{settings.frontend_url}{redirect_url}"
-        final_redirect = RedirectResponse(
-            url=final_url,
-            status_code=status.HTTP_302_FOUND,
-        )
+        final_redirect = create_redirect(final_url)
         set_session_cookie(final_redirect, session.token)
         return final_redirect
 
@@ -912,15 +902,9 @@ async def google_callback(
             "google", None, request, reason="HTTP error from Google"
         )
         await db.commit()
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=oauth_failed",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
     except Exception:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=internal_error",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=internal_error")
 
 
 @router.get(
@@ -990,24 +974,15 @@ async def github_callback(
 ) -> RedirectResponse:
     # Handle OAuth errors
     if error:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error={error}",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error={error}")
 
     if not code or not state:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=missing_params",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=missing_params")
 
     # Verify state
     redirect_url = _oauth_states.pop(state, None)
     if redirect_url is None:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=invalid_state",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=invalid_state")
 
     try:
         # Exchange code for access token
@@ -1028,10 +1003,7 @@ async def github_callback(
 
             access_token = tokens.get("access_token")
             if not access_token:
-                return RedirectResponse(
-                    url=f"{settings.frontend_url}/signin?error=oauth_failed",
-                    status_code=status.HTTP_302_FOUND,
-                )
+                return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
 
             # Get user info
             user_response = await client.get(
@@ -1059,10 +1031,7 @@ async def github_callback(
         verified_emails = [e["email"].lower() for e in emails_data if e.get("verified", False)]
 
         if not verified_emails:
-            return RedirectResponse(
-                url=f"{settings.frontend_url}/signin?error=no_email",
-                status_code=status.HTTP_302_FOUND,
-            )
+            return create_redirect(f"{settings.frontend_url}/signin?error=no_email")
 
         # Check if any verified email matches an approved domain
         matching_email = None
@@ -1099,10 +1068,7 @@ async def github_callback(
         if not user:
             # For GitHub, if no approved domain match, show specific error
             if not is_internal:
-                return RedirectResponse(
-                    url=f"{settings.frontend_url}/signin?error=github_no_org_email",
-                    status_code=status.HTTP_302_FOUND,
-                )
+                return create_redirect(f"{settings.frontend_url}/signin?error=github_no_org_email")
 
             # Auto-create user (only for internal domain matches)
             user = User(
@@ -1117,10 +1083,7 @@ async def github_callback(
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
-            return RedirectResponse(
-                url=f"{settings.frontend_url}/signin?error=account_rejected",
-                status_code=status.HTTP_302_FOUND,
-            )
+            return create_redirect(f"{settings.frontend_url}/signin?error=account_rejected")
 
         # Handle pending users
         if user.status == UserStatus.PENDING:
@@ -1138,10 +1101,7 @@ async def github_callback(
                 await email_service.send_pending_registration_notification(admin.email, email)
 
             await db.commit()
-            return RedirectResponse(
-                url=f"{settings.frontend_url}/signin?pending=true",
-                status_code=status.HTTP_302_FOUND,
-            )
+            return create_redirect(f"{settings.frontend_url}/signin?pending=true")
 
         # Update name from GitHub if not set
         if not user.name:
@@ -1165,10 +1125,7 @@ async def github_callback(
             final_url = redirect_url
         else:
             final_url = f"{settings.frontend_url}{redirect_url}"
-        final_redirect = RedirectResponse(
-            url=final_url,
-            status_code=status.HTTP_302_FOUND,
-        )
+        final_redirect = create_redirect(final_url)
         set_session_cookie(final_redirect, session.token)
         return final_redirect
 
@@ -1179,15 +1136,9 @@ async def github_callback(
             "github", None, request, reason="HTTP error from GitHub"
         )
         await db.commit()
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=oauth_failed",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
     except Exception:
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/signin?error=internal_error",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return create_redirect(f"{settings.frontend_url}/signin?error=internal_error")
 
 
 @router.get(
