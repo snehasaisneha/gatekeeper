@@ -2,7 +2,7 @@ import * as React from 'react';
 import { AuthProvider, useRequireAuth, useAuth } from '../AuthContext';
 import { TopBar } from '../TopBar';
 import { AdminDashboard } from './AdminDashboard';
-import { Loader2, ShieldX } from 'lucide-react';
+import { ShieldX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface AdminPageProps {
