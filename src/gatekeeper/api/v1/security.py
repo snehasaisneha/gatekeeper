@@ -40,48 +40,62 @@ async def get_security_stats(admin: AdminUser, db: DbSession) -> SecurityStats:
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Count active IP bans
-    ip_ban_stmt = select(func.count(BannedIP.id)).where(
-        and_(
-            BannedIP.is_active == True,  # noqa: E712
-            or_(BannedIP.expires_at.is_(None), BannedIP.expires_at > now),
-        )
-    )
-    ip_ban_result = await db.execute(ip_ban_stmt)
-    banned_ips = ip_ban_result.scalar() or 0
+    banned_ips = 0
+    banned_emails = 0
+    blocked_today = 0
+    failed_logins_today = 0
 
-    # Count active email bans
-    email_ban_stmt = select(func.count(BannedEmail.id)).where(
-        and_(
-            BannedEmail.is_active == True,  # noqa: E712
-            or_(BannedEmail.expires_at.is_(None), BannedEmail.expires_at > now),
+    try:
+        # Count active IP bans
+        ip_ban_stmt = select(func.count(BannedIP.id)).where(
+            and_(
+                BannedIP.is_active == True,  # noqa: E712
+                or_(BannedIP.expires_at.is_(None), BannedIP.expires_at > now),
+            )
         )
-    )
-    email_ban_result = await db.execute(email_ban_stmt)
-    banned_emails = email_ban_result.scalar() or 0
+        ip_ban_result = await db.execute(ip_ban_stmt)
+        banned_ips = ip_ban_result.scalar() or 0
+    except Exception:
+        pass  # Table may not exist yet
 
-    # Count blocked requests today (security.blocked.* events)
-    blocked_stmt = select(func.count(AuditLog.id)).where(
-        and_(
-            AuditLog.event_type.like("security.blocked.%"),
-            AuditLog.created_at >= today_start,
+    try:
+        # Count active email bans
+        email_ban_stmt = select(func.count(BannedEmail.id)).where(
+            and_(
+                BannedEmail.is_active == True,  # noqa: E712
+                or_(BannedEmail.expires_at.is_(None), BannedEmail.expires_at > now),
+            )
         )
-    )
-    blocked_result = await db.execute(blocked_stmt)
-    blocked_today = blocked_result.scalar() or 0
+        email_ban_result = await db.execute(email_ban_stmt)
+        banned_emails = email_ban_result.scalar() or 0
+    except Exception:
+        pass  # Table may not exist yet
 
-    # Count failed logins today
-    failed_stmt = select(func.count(AuditLog.id)).where(
-        and_(
-            or_(
-                AuditLog.event_type == "auth.signin.otp_failed",
-                AuditLog.event_type == "auth.signin.passkey_failed",
-            ),
-            AuditLog.created_at >= today_start,
+    try:
+        # Count blocked requests today (security.blocked.* events)
+        blocked_stmt = select(func.count(AuditLog.id)).where(
+            and_(
+                AuditLog.event_type.like("security.blocked.%"),
+                AuditLog.created_at >= today_start,
+            )
         )
-    )
-    failed_result = await db.execute(failed_stmt)
-    failed_logins_today = failed_result.scalar() or 0
+        blocked_result = await db.execute(blocked_stmt)
+        blocked_today = blocked_result.scalar() or 0
+
+        # Count failed logins today
+        failed_stmt = select(func.count(AuditLog.id)).where(
+            and_(
+                or_(
+                    AuditLog.event_type == "auth.signin.otp_failed",
+                    AuditLog.event_type == "auth.signin.passkey_failed",
+                ),
+                AuditLog.created_at >= today_start,
+            )
+        )
+        failed_result = await db.execute(failed_stmt)
+        failed_logins_today = failed_result.scalar() or 0
+    except Exception:
+        pass  # Table may not exist yet
 
     return SecurityStats(
         blocked_today=blocked_today,
@@ -108,45 +122,49 @@ async def list_banned_ips(
     include_expired: bool = Query(default=False, description="Include expired bans"),
     include_inactive: bool = Query(default=False, description="Include inactive bans"),
 ) -> BannedIPList:
-    now = datetime.utcnow()
+    try:
+        now = datetime.utcnow()
 
-    conditions = []
-    if not include_inactive:
-        conditions.append(BannedIP.is_active == True)  # noqa: E712
-    if not include_expired:
-        conditions.append(or_(BannedIP.expires_at.is_(None), BannedIP.expires_at > now))
+        conditions = []
+        if not include_inactive:
+            conditions.append(BannedIP.is_active == True)  # noqa: E712
+        if not include_expired:
+            conditions.append(or_(BannedIP.expires_at.is_(None), BannedIP.expires_at > now))
 
-    # Count total
-    count_stmt = select(func.count(BannedIP.id))
-    if conditions:
-        count_stmt = count_stmt.where(and_(*conditions))
-    count_result = await db.execute(count_stmt)
-    total = count_result.scalar() or 0
+        # Count total
+        count_stmt = select(func.count(BannedIP.id))
+        if conditions:
+            count_stmt = count_stmt.where(and_(*conditions))
+        count_result = await db.execute(count_stmt)
+        total = count_result.scalar() or 0
 
-    # Get bans
-    stmt = select(BannedIP).order_by(BannedIP.banned_at.desc())
-    if conditions:
-        stmt = stmt.where(and_(*conditions))
-    result = await db.execute(stmt)
-    bans = result.scalars().all()
+        # Get bans
+        stmt = select(BannedIP).order_by(BannedIP.banned_at.desc())
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+        result = await db.execute(stmt)
+        bans = result.scalars().all()
 
-    return BannedIPList(
-        banned_ips=[
-            BannedIPRead(
-                id=ban.id,
-                ip_address=ban.ip_address,
-                reason=ban.reason,
-                details=ban.details,
-                banned_at=ban.banned_at,
-                banned_by=ban.banned_by,
-                expires_at=ban.expires_at,
-                is_active=ban.is_active,
-                associated_email=ban.associated_email,
-            )
-            for ban in bans
-        ],
-        total=total,
-    )
+        return BannedIPList(
+            banned_ips=[
+                BannedIPRead(
+                    id=ban.id,
+                    ip_address=ban.ip_address,
+                    reason=ban.reason,
+                    details=ban.details,
+                    banned_at=ban.banned_at,
+                    banned_by=ban.banned_by,
+                    expires_at=ban.expires_at,
+                    is_active=ban.is_active,
+                    associated_email=ban.associated_email,
+                )
+                for ban in bans
+            ],
+            total=total,
+        )
+    except Exception:
+        # Table may not exist yet
+        return BannedIPList(banned_ips=[], total=0)
 
 
 @router.post(
@@ -283,46 +301,50 @@ async def list_banned_emails(
     include_expired: bool = Query(default=False, description="Include expired bans"),
     include_inactive: bool = Query(default=False, description="Include inactive bans"),
 ) -> BannedEmailList:
-    now = datetime.utcnow()
+    try:
+        now = datetime.utcnow()
 
-    conditions = []
-    if not include_inactive:
-        conditions.append(BannedEmail.is_active == True)  # noqa: E712
-    if not include_expired:
-        conditions.append(or_(BannedEmail.expires_at.is_(None), BannedEmail.expires_at > now))
+        conditions = []
+        if not include_inactive:
+            conditions.append(BannedEmail.is_active == True)  # noqa: E712
+        if not include_expired:
+            conditions.append(or_(BannedEmail.expires_at.is_(None), BannedEmail.expires_at > now))
 
-    # Count total
-    count_stmt = select(func.count(BannedEmail.id))
-    if conditions:
-        count_stmt = count_stmt.where(and_(*conditions))
-    count_result = await db.execute(count_stmt)
-    total = count_result.scalar() or 0
+        # Count total
+        count_stmt = select(func.count(BannedEmail.id))
+        if conditions:
+            count_stmt = count_stmt.where(and_(*conditions))
+        count_result = await db.execute(count_stmt)
+        total = count_result.scalar() or 0
 
-    # Get bans
-    stmt = select(BannedEmail).order_by(BannedEmail.banned_at.desc())
-    if conditions:
-        stmt = stmt.where(and_(*conditions))
-    result = await db.execute(stmt)
-    bans = result.scalars().all()
+        # Get bans
+        stmt = select(BannedEmail).order_by(BannedEmail.banned_at.desc())
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+        result = await db.execute(stmt)
+        bans = result.scalars().all()
 
-    return BannedEmailList(
-        banned_emails=[
-            BannedEmailRead(
-                id=ban.id,
-                email=ban.email,
-                is_pattern=ban.is_pattern,
-                reason=ban.reason,
-                details=ban.details,
-                banned_at=ban.banned_at,
-                banned_by=ban.banned_by,
-                expires_at=ban.expires_at,
-                is_active=ban.is_active,
-                associated_ip=ban.associated_ip,
-            )
-            for ban in bans
-        ],
-        total=total,
-    )
+        return BannedEmailList(
+            banned_emails=[
+                BannedEmailRead(
+                    id=ban.id,
+                    email=ban.email,
+                    is_pattern=ban.is_pattern,
+                    reason=ban.reason,
+                    details=ban.details,
+                    banned_at=ban.banned_at,
+                    banned_by=ban.banned_by,
+                    expires_at=ban.expires_at,
+                    is_active=ban.is_active,
+                    associated_ip=ban.associated_ip,
+                )
+                for ban in bans
+            ],
+            total=total,
+        )
+    except Exception:
+        # Table may not exist yet
+        return BannedEmailList(banned_emails=[], total=0)
 
 
 @router.post(
@@ -460,45 +482,52 @@ async def list_security_events(
     db: DbSession,
     limit: int = Query(default=50, le=100, description="Maximum events to return"),
 ) -> SecurityEventList:
-    # Security-related event types
-    security_events = [
-        "security.%",
-        "auth.signin.otp_failed",
-        "auth.signin.passkey_failed",
-    ]
+    try:
+        # Security-related event types
+        security_events = [
+            "security.%",
+            "auth.signin.otp_failed",
+            "auth.signin.passkey_failed",
+        ]
 
-    # Build conditions
-    conditions = []
-    for pattern in security_events:
-        if "%" in pattern:
-            conditions.append(AuditLog.event_type.like(pattern))
-        else:
-            conditions.append(AuditLog.event_type == pattern)
+        # Build conditions
+        conditions = []
+        for pattern in security_events:
+            if "%" in pattern:
+                conditions.append(AuditLog.event_type.like(pattern))
+            else:
+                conditions.append(AuditLog.event_type == pattern)
 
-    # Get events
-    stmt = (
-        select(AuditLog).where(or_(*conditions)).order_by(AuditLog.created_at.desc()).limit(limit)
-    )
-    result = await db.execute(stmt)
-    logs = result.scalars().all()
-
-    # Count total
-    count_stmt = select(func.count(AuditLog.id)).where(or_(*conditions))
-    count_result = await db.execute(count_stmt)
-    total = count_result.scalar() or 0
-
-    events = []
-    for log in logs:
-        details = log.details or {}
-        events.append(
-            SecurityEvent(
-                id=log.id,
-                event_type=log.event_type,
-                ip_address=details.get("ip_address"),
-                email=log.actor_email or details.get("email"),
-                details=details.get("details") or details.get("reason"),
-                created_at=log.created_at,
-            )
+        # Get events
+        stmt = (
+            select(AuditLog)
+            .where(or_(*conditions))
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
         )
+        result = await db.execute(stmt)
+        logs = result.scalars().all()
 
-    return SecurityEventList(events=events, total=total)
+        # Count total
+        count_stmt = select(func.count(AuditLog.id)).where(or_(*conditions))
+        count_result = await db.execute(count_stmt)
+        total = count_result.scalar() or 0
+
+        events = []
+        for log in logs:
+            details = log.details or {}
+            events.append(
+                SecurityEvent(
+                    id=log.id,
+                    event_type=log.event_type,
+                    ip_address=details.get("ip_address"),
+                    email=log.actor_email or details.get("email"),
+                    details=details.get("details") or details.get("reason"),
+                    created_at=log.created_at,
+                )
+            )
+
+        return SecurityEventList(events=events, total=total)
+    except Exception:
+        # Table may not exist yet
+        return SecurityEventList(events=[], total=0)

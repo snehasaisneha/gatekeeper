@@ -27,22 +27,31 @@ export function AdminDashboard() {
 
   React.useEffect(() => {
     async function fetchStats() {
+      // Fetch each stat independently so one failure doesn't break others
       try {
-        const [pendingRes, usersRes, appsRes, domainsRes, securityRes] = await Promise.all([
-          api.admin.listPendingUsers(),
-          api.admin.listUsers(1, 1),
-          api.admin.listApps(),
-          api.admin.listDomains(),
-          api.security.getStats(),
-        ]);
+        const pendingRes = await api.admin.listPendingUsers();
         setPendingCount(pendingRes.total);
+      } catch { /* ignore */ }
+
+      try {
+        const usersRes = await api.admin.listUsers(1, 1);
         setTotalUsers(usersRes.total);
+      } catch { /* ignore */ }
+
+      try {
+        const appsRes = await api.admin.listApps();
         setTotalApps(appsRes.total);
+      } catch { /* ignore */ }
+
+      try {
+        const domainsRes = await api.admin.listDomains();
         setTotalDomains(domainsRes.total);
+      } catch { /* ignore */ }
+
+      try {
+        const securityRes = await api.security.getStats();
         setBlockedToday(securityRes.blocked_today);
-      } catch {
-        // Silently fail
-      }
+      } catch { /* ignore */ }
     }
     fetchStats();
   }, [refreshKey]);

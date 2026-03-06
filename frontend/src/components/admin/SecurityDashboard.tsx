@@ -54,26 +54,38 @@ export function SecurityDashboard({ onRefresh }: SecurityDashboardProps) {
   const loadData = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
+
+    // Load each independently so one failure doesn't break others
     try {
-      const [statsRes, ipsRes, emailsRes, eventsRes] = await Promise.all([
-        api.security.getStats(),
-        api.security.listBannedIPs(),
-        api.security.listBannedEmails(),
-        api.security.listEvents(20),
-      ]);
+      const statsRes = await api.security.getStats();
       setStats(statsRes);
-      setBannedIPs(ipsRes.banned_ips);
-      setBannedEmails(emailsRes.banned_emails);
-      setEvents(eventsRes.events);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Failed to load security data');
-      }
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Stats endpoint may fail if migration not run
+      setStats({ blocked_today: 0, banned_ips: 0, banned_emails: 0, failed_logins_today: 0 });
     }
+
+    try {
+      const ipsRes = await api.security.listBannedIPs();
+      setBannedIPs(ipsRes.banned_ips);
+    } catch {
+      setBannedIPs([]);
+    }
+
+    try {
+      const emailsRes = await api.security.listBannedEmails();
+      setBannedEmails(emailsRes.banned_emails);
+    } catch {
+      setBannedEmails([]);
+    }
+
+    try {
+      const eventsRes = await api.security.listEvents(20);
+      setEvents(eventsRes.events);
+    } catch {
+      setEvents([]);
+    }
+
+    setIsLoading(false);
   }, []);
 
   React.useEffect(() => {

@@ -220,17 +220,21 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
         await db.refresh(user)
 
         # Notify admins who want to know about ALL new registrations
-        email_service = EmailService(db=db)
-        admin_stmt = select(User).where(
-            User.is_admin == True,  # noqa: E712
-            User.notify_all_registrations == True,  # noqa: E712
-        )
-        admin_result = await db.execute(admin_stmt)
-        admins = admin_result.scalars().all()
-        for admin in admins:
-            await email_service.send_new_user_notification(
-                admin.email, email, is_auto_approved=(user.status == UserStatus.APPROVED)
+        try:
+            email_service = EmailService(db=db)
+            admin_stmt = select(User).where(
+                User.is_admin == True,  # noqa: E712
+                User.notify_all_registrations == True,  # noqa: E712
             )
+            admin_result = await db.execute(admin_stmt)
+            admins = admin_result.scalars().all()
+            for admin in admins:
+                await email_service.send_new_user_notification(
+                    admin.email, email, is_auto_approved=(user.status == UserStatus.APPROVED)
+                )
+        except Exception:
+            # Don't let notification failures prevent user signin
+            logger.exception("Failed to send new user notification")
 
     # Rejected users cannot sign in
     if user.status == UserStatus.REJECTED:
@@ -862,17 +866,20 @@ async def google_callback(
             await db.refresh(user)
 
             # Notify admins who want to know about ALL new registrations
-            email_service = EmailService(db=db)
-            admin_stmt = select(User).where(
-                User.is_admin == True,  # noqa: E712
-                User.notify_all_registrations == True,  # noqa: E712
-            )
-            admin_result = await db.execute(admin_stmt)
-            admins = admin_result.scalars().all()
-            for admin in admins:
-                await email_service.send_new_user_notification(
-                    admin.email, email, is_auto_approved=(user.status == UserStatus.APPROVED)
+            try:
+                email_service = EmailService(db=db)
+                admin_stmt = select(User).where(
+                    User.is_admin == True,  # noqa: E712
+                    User.notify_all_registrations == True,  # noqa: E712
                 )
+                admin_result = await db.execute(admin_stmt)
+                admins = admin_result.scalars().all()
+                for admin in admins:
+                    await email_service.send_new_user_notification(
+                        admin.email, email, is_auto_approved=(user.status == UserStatus.APPROVED)
+                    )
+            except Exception:
+                logger.exception("Failed to send new user notification")
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
@@ -1108,17 +1115,20 @@ async def github_callback(
             await db.refresh(user)
 
             # Notify admins who want to know about ALL new registrations
-            email_service = EmailService(db=db)
-            admin_stmt = select(User).where(
-                User.is_admin == True,  # noqa: E712
-                User.notify_all_registrations == True,  # noqa: E712
-            )
-            admin_result = await db.execute(admin_stmt)
-            admins = admin_result.scalars().all()
-            for admin in admins:
-                await email_service.send_new_user_notification(
-                    admin.email, email, is_auto_approved=True
+            try:
+                email_service = EmailService(db=db)
+                admin_stmt = select(User).where(
+                    User.is_admin == True,  # noqa: E712
+                    User.notify_all_registrations == True,  # noqa: E712
                 )
+                admin_result = await db.execute(admin_stmt)
+                admins = admin_result.scalars().all()
+                for admin in admins:
+                    await email_service.send_new_user_notification(
+                        admin.email, email, is_auto_approved=True
+                    )
+            except Exception:
+                logger.exception("Failed to send new user notification")
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
