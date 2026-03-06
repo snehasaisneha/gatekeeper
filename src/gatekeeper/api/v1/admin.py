@@ -201,6 +201,7 @@ async def list_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     status_filter: UserStatus | None = Query(None, description="Filter by status"),
+    include_rejected: bool = Query(False, description="Include rejected users"),
 ) -> UserList:
     offset = (page - 1) * page_size
 
@@ -210,6 +211,10 @@ async def list_users(
     if status_filter:
         count_stmt = count_stmt.where(User.status == status_filter)
         query_stmt = query_stmt.where(User.status == status_filter)
+    elif not include_rejected:
+        # By default, hide rejected users (they're treated as banned)
+        count_stmt = count_stmt.where(User.status != UserStatus.REJECTED)
+        query_stmt = query_stmt.where(User.status != UserStatus.REJECTED)
 
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
