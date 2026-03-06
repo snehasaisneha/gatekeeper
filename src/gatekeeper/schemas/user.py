@@ -26,6 +26,12 @@ class UserRead(BaseModel):
     is_internal: bool = Field(
         default=False, description="Whether user is internal (email domain in approved_domains)"
     )
+    notify_new_registrations: bool = Field(
+        default=False, description="Email notifications for pending registrations"
+    )
+    notify_all_registrations: bool = Field(
+        default=False, description="Email notifications for all new sign-ups"
+    )
     created_at: datetime = Field(..., description="Account creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -40,6 +46,8 @@ class UserRead(BaseModel):
                 "is_admin": False,
                 "is_seeded": False,
                 "is_internal": True,
+                "notify_new_registrations": False,
+                "notify_all_registrations": False,
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z",
             }

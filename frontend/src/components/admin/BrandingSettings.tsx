@@ -1,10 +1,9 @@
 import * as React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { api, type AccentColor, type BrandingAdmin, type AccentPreset } from '@/lib/api';
-import { Loader2, Check, X, Palette, Image, RefreshCw } from 'lucide-react';
+import { Check, X, Palette, Image, RefreshCw } from 'lucide-react';
 import { getAppName } from '@/lib/branding';
 
 interface BrandingSettingsProps {
@@ -94,7 +93,10 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-4 border-black border-t-transparent animate-spin" />
+          <p className="mt-4 text-sm font-bold uppercase tracking-wider">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -103,31 +105,32 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
     <div className="space-y-6">
       {/* Logo Settings */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+        <CardHeader className="border-b-4 border-black bg-black text-white p-4">
+          <CardTitle className="flex items-center gap-2 text-white">
             <Image className="h-5 w-5" />
             Logo Settings
           </CardTitle>
-          <CardDescription>
-            Configure your organization's logos. Leave empty to use "{appName}" text.
-          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="p-4 space-y-6">
+          <p className="text-xs text-gray-500">
+            Configure your organization's logos. Leave empty to use "{appName}" text.
+          </p>
+
           {/* Full Logo */}
           <div className="space-y-2">
-            <Label htmlFor="logo-url">Full Logo URL</Label>
+            <label className="text-xs font-bold uppercase tracking-wider">Full Logo URL</label>
             <Input
-              id="logo-url"
               placeholder="https://example.com/logo.png"
               value={logoUrl}
               onChange={(e) => setLogoUrl(e.target.value)}
+              slim
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-500">
               Used in page headers and emails. Recommended size: 200x48px
             </p>
             {logoUrl && (
-              <div className="mt-2 p-4 border rounded bg-muted/50">
-                <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+              <div className="mt-2 p-4 border-2 border-black bg-gray-50">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Preview:</p>
                 <img
                   src={logoUrl}
                   alt="Logo preview"
@@ -142,19 +145,19 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
 
           {/* Square Logo */}
           <div className="space-y-2">
-            <Label htmlFor="logo-square-url">Square Logo URL</Label>
+            <label className="text-xs font-bold uppercase tracking-wider">Square Logo URL</label>
             <Input
-              id="logo-square-url"
               placeholder="https://example.com/logo-square.png"
               value={logoSquareUrl}
               onChange={(e) => setLogoSquareUrl(e.target.value)}
+              slim
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-500">
               Used in compact spaces and mobile views. Recommended size: 64x64px
             </p>
             {logoSquareUrl && (
-              <div className="mt-2 p-4 border rounded bg-muted/50">
-                <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+              <div className="mt-2 p-4 border-2 border-black bg-gray-50">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Preview:</p>
                 <img
                   src={logoSquareUrl}
                   alt="Square logo preview"
@@ -169,14 +172,14 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
 
           {/* Favicon */}
           <div className="space-y-2">
-            <Label htmlFor="favicon-url">Favicon URL</Label>
+            <label className="text-xs font-bold uppercase tracking-wider">Favicon URL</label>
             <Input
-              id="favicon-url"
               placeholder="https://example.com/favicon.ico"
               value={faviconUrl}
               onChange={(e) => setFaviconUrl(e.target.value)}
+              slim
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-500">
               Browser tab icon. Recommended: .ico, .png, or .svg, 32x32px
             </p>
           </div>
@@ -185,32 +188,32 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
 
       {/* Accent Color */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+        <CardHeader className="border-b-4 border-black bg-black text-white p-4">
+          <CardTitle className="flex items-center gap-2 text-white">
             <Palette className="h-5 w-5" />
             Accent Color
           </CardTitle>
-          <CardDescription>
-            Choose the primary accent color for buttons, borders, and highlights.
-          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4">
+          <p className="text-xs text-gray-500 mb-4">
+            Choose the primary accent color for buttons, borders, and highlights.
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
             {presets.map((preset) => (
               <button
                 key={preset.name}
                 onClick={() => setAccentColor(preset.name as AccentColor)}
-                className={`relative flex flex-col items-center gap-2 p-3 rounded border-2 transition-all ${
+                className={`relative flex flex-col items-center gap-2 p-3 border-4 transition-all ${
                   accentColor === preset.name
-                    ? 'border-black ring-2 ring-offset-2 ring-black'
+                    ? 'border-black'
                     : 'border-gray-200 hover:border-gray-400'
                 }`}
               >
                 <div
-                  className="w-10 h-10 rounded-sm border border-gray-300"
+                  className="w-10 h-10 border-2 border-gray-300"
                   style={{ backgroundColor: preset.hex }}
                 />
-                <span className="text-xs font-medium capitalize">{preset.name}</span>
+                <span className="text-xs font-bold uppercase tracking-wider">{preset.name}</span>
                 {accentColor === preset.name && (
                   <Check className="absolute top-1 right-1 h-4 w-4 text-black" />
                 )}
@@ -221,16 +224,16 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
       </Card>
 
       {/* Save Button */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between p-4 border-4 border-black">
         <div>
           {error && (
-            <p className="text-sm text-destructive flex items-center gap-1">
+            <p className="text-sm text-red-600 flex items-center gap-1 font-bold">
               <X className="h-4 w-4" />
               {error}
             </p>
           )}
           {success && (
-            <p className="text-sm text-green-600 flex items-center gap-1">
+            <p className="text-sm text-green-600 flex items-center gap-1 font-bold">
               <Check className="h-4 w-4" />
               Branding saved successfully
             </p>
@@ -238,7 +241,7 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
         </div>
         <div className="flex gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={() => window.location.reload()}
             disabled={saving}
           >
@@ -248,7 +251,7 @@ export function BrandingSettings({ onRefresh }: BrandingSettingsProps) {
           <Button onClick={handleSave} disabled={saving}>
             {saving ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-2" />
                 Saving...
               </>
             ) : (

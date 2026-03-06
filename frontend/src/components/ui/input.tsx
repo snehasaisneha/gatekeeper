@@ -1,15 +1,36 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+/**
+ * Input Component - Gatekeeper Design System
+ *
+ * Brutalist input with thick border and no border-radius.
+ * Focus state changes background color instead of adding ring.
+ */
+
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  /** Use thinner border for compact forms */
+  slim?: boolean;
+  /** Show error state */
+  error?: boolean;
+}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, slim = false, error = false, ...props }, ref) => {
     return (
       <input
         type={type}
         className={cn(
-          'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+          // Base styles
+          'flex w-full bg-white px-4 text-sm text-black',
+          'placeholder:text-gray-400',
+          'transition-colors duration-150',
+          'focus:outline-none focus:bg-gray-50',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          // Border thickness
+          slim ? 'border-2 py-2 h-10' : 'border-4 py-3 h-12',
+          // Border color
+          error ? 'border-red-600' : 'border-black',
           className
         )}
         ref={ref}

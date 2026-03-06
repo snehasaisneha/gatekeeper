@@ -109,6 +109,73 @@ export interface DeploymentConfig {
   app_url: string;
 }
 
+// Security types
+export type BanReason =
+  | 'brute_force'
+  | 'spam'
+  | 'rejected_user'
+  | 'associated_ip'
+  | 'associated_email'
+  | 'rate_limit'
+  | 'manual'
+  | 'disposable_email';
+
+export interface BannedIP {
+  id: string;
+  ip_address: string;
+  reason: string;
+  details: string | null;
+  banned_at: string;
+  banned_by: string | null;
+  expires_at: string | null;
+  is_active: boolean;
+  associated_email: string | null;
+}
+
+export interface BannedIPList {
+  banned_ips: BannedIP[];
+  total: number;
+}
+
+export interface BannedEmail {
+  id: string;
+  email: string;
+  is_pattern: boolean;
+  reason: string;
+  details: string | null;
+  banned_at: string;
+  banned_by: string | null;
+  expires_at: string | null;
+  is_active: boolean;
+  associated_ip: string | null;
+}
+
+export interface BannedEmailList {
+  banned_emails: BannedEmail[];
+  total: number;
+}
+
+export interface SecurityStats {
+  blocked_today: number;
+  banned_ips: number;
+  banned_emails: number;
+  failed_logins_today: number;
+}
+
+export interface SecurityEvent {
+  id: string;
+  event_type: string;
+  ip_address: string | null;
+  email: string | null;
+  details: string | null;
+  created_at: string;
+}
+
+export interface SecurityEventList {
+  events: SecurityEvent[];
+  total: number;
+}
+
 export interface BrandingAdmin extends Branding {
   updated_at: string | null;
   updated_by: string | null;
@@ -272,7 +339,12 @@ export const api = {
         body: JSON.stringify({ email, is_admin: isAdmin, auto_approve: autoApprove }),
       }),
 
-    updateUser: (id: string, data: { status?: string; is_admin?: boolean }) =>
+    updateUser: (id: string, data: {
+      status?: string;
+      is_admin?: boolean;
+      notify_new_registrations?: boolean;
+      notify_all_registrations?: boolean;
+    }) =>
       request<User>(`/admin/users/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -350,6 +422,62 @@ export const api = {
 
     // Deployment config
     getDeploymentConfig: () => request<DeploymentConfig>('/admin/config'),
+  },
+
+  // Security endpoints
+  security: {
+    getStats: () => request<SecurityStats>('/admin/security/stats'),
+
+    // Banned IPs
+    listBannedIPs: (includeExpired = false, includeInactive = false) =>
+      request<BannedIPList>(
+        `/admin/security/banned-ips?include_expired=${includeExpired}&include_inactive=${includeInactive}`
+      ),
+
+    banIP: (data: {
+      ip_address: string;
+      reason?: BanReason;
+      details?: string;
+      expires_at?: string;
+      associated_email?: string;
+    }) =>
+      request<BannedIP>('/admin/security/banned-ips', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    unbanIP: (banId: string) =>
+      request<MessageResponse>(`/admin/security/banned-ips/${banId}`, {
+        method: 'DELETE',
+      }),
+
+    // Banned emails
+    listBannedEmails: (includeExpired = false, includeInactive = false) =>
+      request<BannedEmailList>(
+        `/admin/security/banned-emails?include_expired=${includeExpired}&include_inactive=${includeInactive}`
+      ),
+
+    banEmail: (data: {
+      email: string;
+      is_pattern?: boolean;
+      reason?: BanReason;
+      details?: string;
+      expires_at?: string;
+      associated_ip?: string;
+    }) =>
+      request<BannedEmail>('/admin/security/banned-emails', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    unbanEmail: (banId: string) =>
+      request<MessageResponse>(`/admin/security/banned-emails/${banId}`, {
+        method: 'DELETE',
+      }),
+
+    // Security events
+    listEvents: (limit = 50) =>
+      request<SecurityEventList>(`/admin/security/events?limit=${limit}`),
   },
 };
 

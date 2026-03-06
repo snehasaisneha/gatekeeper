@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api, type User, ApiError } from '@/lib/api';
-import { Loader2, Check, X } from 'lucide-react';
+import { Check, X, Clock } from 'lucide-react';
 
 interface PendingRegistrationsProps {
   onAction?: () => void;
@@ -69,13 +69,16 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Pending Registrations</CardTitle>
+      <Card className="border-orange-500">
+        <CardHeader className="border-b-4 border-orange-500 bg-orange-500 text-white p-4">
+          <CardTitle className="flex items-center gap-2 text-white">
+            <Clock className="h-5 w-5" />
+            Pending Registrations
+          </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4">
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin" />
+            <div className="inline-block w-6 h-6 border-4 border-orange-500 border-t-transparent animate-spin" />
           </div>
         </CardContent>
       </Card>
@@ -84,14 +87,17 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Pending Registrations</CardTitle>
+      <Card className="border-orange-500">
+        <CardHeader className="border-b-4 border-orange-500 bg-orange-500 text-white p-4">
+          <CardTitle className="flex items-center gap-2 text-white">
+            <Clock className="h-5 w-5" />
+            Pending Registrations
+          </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4">
           <div className="text-center py-4">
-            <p className="text-destructive">{error}</p>
-            <Button onClick={loadPending} variant="outline" className="mt-4">
+            <p className="text-red-600 font-bold">{error}</p>
+            <Button onClick={loadPending} variant="secondary" className="mt-4">
               Retry
             </Button>
           </div>
@@ -101,28 +107,33 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Pending Registrations</CardTitle>
-        <CardDescription>
-          {users.length === 0
-            ? 'No pending registrations'
-            : `${users.length} user${users.length === 1 ? '' : 's'} waiting for approval`}
-        </CardDescription>
+    <Card className="border-orange-500">
+      <CardHeader className="border-b-4 border-orange-500 bg-orange-500 text-white p-4">
+        <CardTitle className="flex items-center gap-2 text-white">
+          <Clock className="h-5 w-5" />
+          Pending Registrations
+          <span className="ml-auto text-sm font-normal">
+            {users.length === 0
+              ? 'No pending'
+              : `${users.length} waiting`}
+          </span>
+        </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4">
         {users.length === 0 ? (
-          <p className="text-center text-muted-foreground py-4">All caught up!</p>
+          <p className="text-center text-gray-500 py-4 font-bold uppercase tracking-wider">
+            All caught up!
+          </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {users.map((user) => (
               <div
                 key={user.id}
-                className="flex items-center justify-between p-3 rounded-lg border"
+                className="flex items-center justify-between p-3 border-2 border-black hover:bg-gray-50"
               >
                 <div>
-                  <p className="font-medium">{user.email}</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="font-bold text-sm">{user.email}</p>
+                  <p className="text-xs text-gray-500">
                     Registered {new Date(user.created_at).toLocaleDateString()}
                   </p>
                 </div>
@@ -133,7 +144,7 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
                     disabled={actionLoading === user.id}
                   >
                     {actionLoading === user.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin" />
                     ) : (
                       <>
                         <Check className="h-4 w-4 mr-1" />
@@ -143,12 +154,12 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleReject(user)}
                     disabled={actionLoading === user.id}
                   >
                     {actionLoading === user.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin" />
                     ) : (
                       <>
                         <X className="h-4 w-4 mr-1" />

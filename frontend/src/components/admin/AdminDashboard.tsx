@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserList } from './UserList';
@@ -8,10 +7,11 @@ import { AppManagement } from './AppManagement';
 import { AddUserModal } from './AddUserModal';
 import { DomainManagement } from './DomainManagement';
 import { BrandingSettings } from './BrandingSettings';
+import { SecurityDashboard } from './SecurityDashboard';
 import { api } from '@/lib/api';
-import { UserPlus, AppWindow, Users, Clock, Globe, Palette, ExternalLink } from 'lucide-react';
+import { UserPlus, AppWindow, Users, Clock, Globe, Palette, Shield, ExternalLink } from 'lucide-react';
 
-type TabType = 'users' | 'apps' | 'domains' | 'branding';
+type TabType = 'users' | 'apps' | 'domains' | 'branding' | 'security';
 
 export function AdminDashboard() {
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -23,20 +23,23 @@ export function AdminDashboard() {
   const [totalUsers, setTotalUsers] = React.useState(0);
   const [totalApps, setTotalApps] = React.useState(0);
   const [totalDomains, setTotalDomains] = React.useState(0);
+  const [blockedToday, setBlockedToday] = React.useState(0);
 
   React.useEffect(() => {
     async function fetchStats() {
       try {
-        const [pendingRes, usersRes, appsRes, domainsRes] = await Promise.all([
+        const [pendingRes, usersRes, appsRes, domainsRes, securityRes] = await Promise.all([
           api.admin.listPendingUsers(),
           api.admin.listUsers(1, 1),
           api.admin.listApps(),
           api.admin.listDomains(),
+          api.security.getStats(),
         ]);
         setPendingCount(pendingRes.total);
         setTotalUsers(usersRes.total);
         setTotalApps(appsRes.total);
         setTotalDomains(domainsRes.total);
+        setBlockedToday(securityRes.blocked_today);
       } catch {
         // Silently fail
       }
@@ -58,98 +61,116 @@ export function AdminDashboard() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Super Admin</h1>
-          <p className="text-muted-foreground text-sm">Manage users and apps across the platform</p>
+          <h1 className="text-2xl font-bold uppercase tracking-wider">Super Admin</h1>
+          <p className="text-gray-500 text-sm">Manage users and apps across the platform</p>
         </div>
         <a
           href="https://gatekeeper-gk.readthedocs.io/en/latest/guides/"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-primary hover:underline flex items-center gap-1"
+          className="text-sm text-black hover:underline flex items-center gap-1 font-bold uppercase tracking-wider"
         >
           Admin Guide <ExternalLink className="h-3 w-3" />
         </a>
       </div>
 
       {/* Stats Overview */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab('users')}>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Users</p>
-                <p className="text-2xl font-bold">{totalUsers}</p>
-              </div>
-              <Users className="h-8 w-8 text-muted-foreground/50" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className={`cursor-pointer hover:border-primary/50 transition-colors ${pendingCount > 0 ? 'border-orange-500/50' : ''}`}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <button
           onClick={() => setActiveTab('users')}
+          className="border-4 border-black p-4 hover:bg-gray-50 transition-colors text-left"
         >
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Pending Approvals</p>
-                <p className="text-2xl font-bold">{pendingCount}</p>
-              </div>
-              <Clock className={`h-8 w-8 ${pendingCount > 0 ? 'text-orange-500' : 'text-muted-foreground/50'}`} />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total Users</p>
+              <p className="text-3xl font-bold mt-1">{totalUsers}</p>
             </div>
-          </CardContent>
-        </Card>
+            <Users className="h-8 w-8 text-gray-400" />
+          </div>
+        </button>
 
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab('apps')}>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Apps</p>
-                <p className="text-2xl font-bold">{totalApps}</p>
-              </div>
-              <AppWindow className="h-8 w-8 text-muted-foreground/50" />
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`border-4 p-4 hover:bg-gray-50 transition-colors text-left ${
+            pendingCount > 0 ? 'border-orange-500 bg-orange-50' : 'border-black'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Pending</p>
+              <p className="text-3xl font-bold mt-1">{pendingCount}</p>
             </div>
-          </CardContent>
-        </Card>
+            <Clock className={`h-8 w-8 ${pendingCount > 0 ? 'text-orange-500' : 'text-gray-400'}`} />
+          </div>
+        </button>
 
-        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveTab('domains')}>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Approved Domains</p>
-                <p className="text-2xl font-bold">{totalDomains}</p>
-              </div>
-              <Globe className="h-8 w-8 text-muted-foreground/50" />
+        <button
+          onClick={() => setActiveTab('apps')}
+          className="border-4 border-black p-4 hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Apps</p>
+              <p className="text-3xl font-bold mt-1">{totalApps}</p>
             </div>
-          </CardContent>
-        </Card>
+            <AppWindow className="h-8 w-8 text-gray-400" />
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('domains')}
+          className="border-4 border-black p-4 hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Domains</p>
+              <p className="text-3xl font-bold mt-1">{totalDomains}</p>
+            </div>
+            <Globe className="h-8 w-8 text-gray-400" />
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('security')}
+          className={`border-4 p-4 hover:bg-gray-50 transition-colors text-left ${
+            blockedToday > 0 ? 'border-red-500 bg-red-50' : 'border-black'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Blocked Today</p>
+              <p className="text-3xl font-bold mt-1">{blockedToday}</p>
+            </div>
+            <Shield className={`h-8 w-8 ${blockedToday > 0 ? 'text-red-500' : 'text-gray-400'}`} />
+          </div>
+        </button>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex items-center justify-between border-b">
-        <div className="flex gap-1">
+      <div className="flex items-center justify-between border-b-4 border-black">
+        <div className="flex">
           <button
             onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-2 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
               activeTab === 'users'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'bg-black text-white'
+                : 'bg-white text-black hover:bg-gray-100'
             }`}
           >
             <Users className="h-4 w-4" />
             Users
             {pendingCount > 0 && (
-              <Badge variant="secondary" className="ml-1 bg-orange-100 text-orange-700 text-xs">
+              <Badge variant="warning" className="ml-1">
                 {pendingCount}
               </Badge>
             )}
           </button>
           <button
             onClick={() => setActiveTab('apps')}
-            className={`flex items-center gap-2 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
               activeTab === 'apps'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'bg-black text-white'
+                : 'bg-white text-black hover:bg-gray-100'
             }`}
           >
             <AppWindow className="h-4 w-4" />
@@ -157,10 +178,10 @@ export function AdminDashboard() {
           </button>
           <button
             onClick={() => setActiveTab('domains')}
-            className={`flex items-center gap-2 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
               activeTab === 'domains'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'bg-black text-white'
+                : 'bg-white text-black hover:bg-gray-100'
             }`}
           >
             <Globe className="h-4 w-4" />
@@ -168,14 +189,30 @@ export function AdminDashboard() {
           </button>
           <button
             onClick={() => setActiveTab('branding')}
-            className={`flex items-center gap-2 px-4 py-2 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
               activeTab === 'branding'
-                ? 'border-primary text-foreground font-medium'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'bg-black text-white'
+                : 'bg-white text-black hover:bg-gray-100'
             }`}
           >
             <Palette className="h-4 w-4" />
             Branding
+          </button>
+          <button
+            onClick={() => setActiveTab('security')}
+            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
+              activeTab === 'security'
+                ? 'bg-black text-white'
+                : 'bg-white text-black hover:bg-gray-100'
+            }`}
+          >
+            <Shield className="h-4 w-4" />
+            Security
+            {blockedToday > 0 && (
+              <Badge variant="destructive" className="ml-1">
+                {blockedToday}
+              </Badge>
+            )}
           </button>
         </div>
 
@@ -200,7 +237,7 @@ export function AdminDashboard() {
           {pendingCount > 0 && <PendingRegistrations onAction={handleRefresh} />}
 
           <div>
-            <h2 className="text-lg font-semibold mb-4">All Users</h2>
+            <h2 className="text-lg font-bold uppercase tracking-wider mb-4">All Users</h2>
             <UserList onRefresh={handleRefresh} />
           </div>
         </div>
@@ -221,6 +258,12 @@ export function AdminDashboard() {
       {activeTab === 'branding' && (
         <div>
           <BrandingSettings onRefresh={handleRefresh} />
+        </div>
+      )}
+
+      {activeTab === 'security' && (
+        <div>
+          <SecurityDashboard onRefresh={handleRefresh} />
         </div>
       )}
     </div>

@@ -4,8 +4,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =============================================================================
+   GATEKEEPER DESIGN SYSTEM
+
+   A brutalist design system with sharp edges, bold typography, and high contrast.
+   All components use the configurable --accent-color for theming.
+
+   Reference: .claude/skills/gatekeeper-design-system/SKILL.md
+   ============================================================================= */
+
 @layer base {
   :root {
+    /* Core colors */
     --background: 0 0% 100%;
     --foreground: 0 0% 0%;
     --card: 0 0% 100%;
@@ -20,17 +30,20 @@
     --muted-foreground: 0 0% 40%;
     --accent: 0 0% 96%;
     --accent-foreground: 0 0% 0%;
-    --destructive: 0 100% 50%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --success: 120 100% 25%;
+    --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
-    --warning: 45 100% 50%;
+    --warning: 38 92% 50%;
     --warning-foreground: 0 0% 0%;
     --border: 0 0% 0%;
     --input: 0 0% 0%;
     --ring: 0 0% 0%;
+
+    /* IMPORTANT: No border radius - brutalist = sharp edges */
     --radius: 0;
-    /* Branding accent color - can be overridden by JS */
+
+    /* Branding accent color - can be overridden by JS/backend */
     --accent-color: #000000;
   }
 
@@ -49,49 +62,382 @@
   }
 }
 
+/* =============================================================================
+   BRUTALIST COMPONENT CLASSES
+
+   These are the canonical styles. All UI components should use these patterns.
+   ============================================================================= */
+
 @layer components {
-  .brutalist-card {
+  /* ---------------------------------------------------------------------------
+     BUTTONS
+     - Primary: Solid accent background, white text
+     - Secondary/Outline: White background, accent border and text
+     - Ghost: Minimal, for icon buttons and inline actions
+     - Danger: Red variant for destructive actions
+     --------------------------------------------------------------------------- */
+
+  .brutal-btn {
+    @apply inline-flex items-center justify-center;
+    @apply border-4 px-6 py-3;
+    @apply font-bold uppercase tracking-wider text-sm;
+    @apply transition-colors duration-150;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    border-color: var(--accent-color);
+    --tw-ring-color: var(--accent-color);
+  }
+
+  .brutal-btn-primary {
+    @apply brutal-btn text-white;
+    background-color: var(--accent-color);
+  }
+
+  .brutal-btn-primary:hover:not(:disabled) {
+    @apply bg-white;
+    color: var(--accent-color);
+  }
+
+  .brutal-btn-secondary {
+    @apply brutal-btn bg-white;
+    color: var(--accent-color);
+  }
+
+  .brutal-btn-secondary:hover:not(:disabled) {
+    @apply text-white;
+    background-color: var(--accent-color);
+  }
+
+  .brutal-btn-ghost {
+    @apply inline-flex items-center justify-center;
+    @apply border-2 border-transparent p-2;
+    @apply transition-colors duration-150;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply hover:border-current;
+  }
+
+  .brutal-btn-danger {
+    @apply brutal-btn;
+    @apply border-red-600 bg-red-600 text-white;
+  }
+
+  .brutal-btn-danger:hover:not(:disabled) {
+    @apply bg-white text-red-600;
+  }
+
+  /* Size variants */
+  .brutal-btn-sm {
+    @apply px-4 py-2 text-xs;
+  }
+
+  .brutal-btn-lg {
+    @apply px-8 py-4 text-base;
+  }
+
+  .brutal-btn-icon {
+    @apply p-2;
+  }
+
+  /* ---------------------------------------------------------------------------
+     INPUTS
+     - Thick border, no border-radius
+     - Focus state changes background slightly
+     --------------------------------------------------------------------------- */
+
+  .brutal-input {
+    @apply w-full border-4 bg-white px-4 py-3;
+    @apply text-sm text-black placeholder:text-gray-400;
+    @apply transition-colors duration-150;
+    @apply focus:outline-none focus:bg-gray-50;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    border-color: var(--accent-color);
+  }
+
+  .brutal-input-error {
+    @apply brutal-input border-red-600;
+  }
+
+  /* Thinner variant for admin forms */
+  .brutal-input-slim {
+    @apply brutal-input border-2 py-2;
+  }
+
+  /* ---------------------------------------------------------------------------
+     CARDS
+     - Thick border with optional header
+     - Header has solid accent background
+     --------------------------------------------------------------------------- */
+
+  .brutal-card {
     @apply bg-white border-4;
     border-color: var(--accent-color);
   }
 
-  .brutalist-input {
-    @apply border-2 bg-white px-4 py-3 text-black placeholder:text-gray-500 focus:outline-none focus:ring-0 focus:bg-gray-100 transition-colors;
-    border-color: var(--accent-color);
-  }
-
-  .brutalist-input:focus {
-    border-color: var(--accent-color);
-  }
-
-  .brutalist-btn {
-    @apply border-4 text-white px-6 py-3 font-bold uppercase tracking-wider hover:bg-white transition-colors cursor-pointer;
-    border-color: var(--accent-color);
+  .brutal-card-header {
+    @apply p-4 text-white;
+    @apply font-bold uppercase tracking-wider;
     background-color: var(--accent-color);
   }
 
-  .brutalist-btn:hover {
+  .brutal-card-content {
+    @apply p-4;
+  }
+
+  .brutal-card-footer {
+    @apply p-4 border-t-4;
+    border-color: var(--accent-color);
+  }
+
+  /* Softer card variant for less emphasis (uses black border always) */
+  .brutal-card-soft {
+    @apply bg-white border-4 border-black;
+  }
+
+  /* ---------------------------------------------------------------------------
+     BADGES
+     - Rectangular, no border-radius
+     - Thick border with uppercase text
+     --------------------------------------------------------------------------- */
+
+  .brutal-badge {
+    @apply inline-flex items-center;
+    @apply border-2 px-2 py-0.5;
+    @apply text-xs font-bold uppercase tracking-wider;
+    border-color: var(--accent-color);
     color: var(--accent-color);
   }
 
-  .brutalist-btn-outline {
-    @apply border-4 bg-white px-6 py-3 font-bold uppercase tracking-wider hover:text-white transition-colors cursor-pointer;
+  .brutal-badge-solid {
+    @apply brutal-badge text-white;
+    background-color: var(--accent-color);
     border-color: var(--accent-color);
-    color: var(--accent-color);
   }
 
-  .brutalist-btn-outline:hover {
+  .brutal-badge-black {
+    @apply brutal-badge border-black text-black;
+  }
+
+  .brutal-badge-black-solid {
+    @apply brutal-badge border-black bg-black text-white;
+  }
+
+  .brutal-badge-danger {
+    @apply brutal-badge border-red-600 text-red-600;
+  }
+
+  .brutal-badge-success {
+    @apply brutal-badge border-green-600 text-green-600;
+  }
+
+  .brutal-badge-warning {
+    @apply brutal-badge border-amber-600 text-amber-600;
+  }
+
+  /* ---------------------------------------------------------------------------
+     ALERTS
+     - Thick left border for emphasis
+     - Solid backgrounds for different severities
+     --------------------------------------------------------------------------- */
+
+  .brutal-alert {
+    @apply p-4 border-l-4;
+    @apply text-sm;
+  }
+
+  .brutal-alert-default {
+    @apply brutal-alert bg-gray-50 border-black;
+  }
+
+  .brutal-alert-error {
+    @apply brutal-alert bg-red-50 border-red-600 text-red-800;
+  }
+
+  .brutal-alert-success {
+    @apply brutal-alert bg-green-50 border-green-600 text-green-800;
+  }
+
+  .brutal-alert-warning {
+    @apply brutal-alert bg-amber-50 border-amber-600 text-amber-800;
+  }
+
+  /* ---------------------------------------------------------------------------
+     MODALS
+     - Solid backdrop (no blur in brutalist style)
+     - Thick border, header with solid background
+     --------------------------------------------------------------------------- */
+
+  .brutal-modal-backdrop {
+    @apply fixed inset-0 z-50;
+    @apply bg-black/50;
+    @apply flex items-center justify-center;
+  }
+
+  .brutal-modal {
+    @apply relative bg-white border-4 border-black;
+    @apply w-full max-w-lg mx-4;
+    @apply max-h-[90vh] flex flex-col;
+  }
+
+  .brutal-modal-header {
+    @apply bg-black text-white p-4;
+    @apply flex items-center justify-between;
+    @apply font-bold uppercase tracking-wider;
+  }
+
+  .brutal-modal-content {
+    @apply p-6 flex-1 overflow-y-auto;
+  }
+
+  .brutal-modal-footer {
+    @apply p-4 border-t-4 border-black;
+    @apply flex items-center justify-end gap-4;
+  }
+
+  /* ---------------------------------------------------------------------------
+     TABLES
+     - Thick borders, uppercase headers
+     - Consistent cell padding
+     --------------------------------------------------------------------------- */
+
+  .brutal-table {
+    @apply w-full border-4 border-black;
+  }
+
+  .brutal-table thead {
+    @apply bg-black text-white;
+  }
+
+  .brutal-table th {
+    @apply p-3 text-left;
+    @apply text-xs font-bold uppercase tracking-wider;
+  }
+
+  .brutal-table td {
+    @apply p-3 border-t-2 border-black;
+    @apply text-sm;
+  }
+
+  .brutal-table tbody tr:hover {
+    @apply bg-gray-50;
+  }
+
+  /* ---------------------------------------------------------------------------
+     TABS
+     - Underline style with thick bottom border
+     --------------------------------------------------------------------------- */
+
+  .brutal-tabs {
+    @apply flex border-b-4 border-black;
+  }
+
+  .brutal-tab {
+    @apply px-4 py-3;
+    @apply text-sm font-bold uppercase tracking-wider;
+    @apply border-b-4 border-transparent -mb-1;
+    @apply transition-colors duration-150;
+    @apply text-gray-500;
+  }
+
+  .brutal-tab:hover {
+    @apply text-black;
+  }
+
+  .brutal-tab-active {
+    @apply brutal-tab text-black;
+    border-color: var(--accent-color);
+  }
+
+  /* ---------------------------------------------------------------------------
+     LOADING SPINNER
+     - Rotating border, uses accent color
+     --------------------------------------------------------------------------- */
+
+  .brutal-spinner {
+    @apply inline-block border-4 animate-spin;
+    border-color: var(--accent-color);
+    border-top-color: transparent;
+  }
+
+  .brutal-spinner-sm {
+    @apply w-5 h-5;
+  }
+
+  .brutal-spinner-md {
+    @apply w-6 h-6;
+  }
+
+  .brutal-spinner-lg {
+    @apply w-8 h-8;
+  }
+
+  /* Full-page loading screen */
+  .brutal-loading-screen {
+    @apply min-h-screen bg-white flex items-center justify-center;
+  }
+
+  .brutal-loading-content {
+    @apply text-center;
+  }
+
+  .brutal-loading-text {
+    @apply mt-4 text-sm font-bold uppercase tracking-wider;
+  }
+
+  /* ---------------------------------------------------------------------------
+     FORM LABELS
+     - Uppercase, small, bold
+     --------------------------------------------------------------------------- */
+
+  .brutal-label {
+    @apply block text-xs font-bold uppercase tracking-wider mb-2;
+  }
+
+  .brutal-help-text {
+    @apply text-xs text-gray-500 mt-1;
+  }
+
+  .brutal-error-text {
+    @apply text-xs text-red-600 mt-1;
+  }
+
+  /* ---------------------------------------------------------------------------
+     LINKS
+     - Underline with hover background
+     --------------------------------------------------------------------------- */
+
+  .brutal-link {
+    @apply underline decoration-2 underline-offset-4;
+    @apply transition-colors duration-150;
+  }
+
+  .brutal-link:hover {
+    @apply text-white;
     background-color: var(--accent-color);
   }
 
-  .brutalist-link {
-    @apply underline decoration-2 underline-offset-4 hover:text-white transition-colors;
+  /* ---------------------------------------------------------------------------
+     SECTION HEADERS
+     - Uppercase with bottom border
+     --------------------------------------------------------------------------- */
+
+  .brutal-section-title {
+    @apply text-lg font-bold uppercase tracking-wider;
+    @apply pb-2 mb-6 border-b-4;
+    border-color: var(--accent-color);
   }
 
-  .brutalist-link:hover {
-    background-color: var(--accent-color);
+  .brutal-page-title {
+    @apply text-2xl font-bold uppercase tracking-wider;
+  }
+
+  .brutal-card-title {
+    @apply text-base font-bold uppercase tracking-wider;
   }
 }
+
+/* =============================================================================
+   UTILITY CLASSES
+   ============================================================================= */
 
 @layer utilities {
   .font-mono {
@@ -102,6 +448,7 @@
     @apply font-bold uppercase tracking-wider;
   }
 
+  /* Shadows with accent color */
   .shadow-brutal {
     box-shadow: 4px 4px 0 0 var(--accent-color);
   }
@@ -110,15 +457,21 @@
     box-shadow: 8px 8px 0 0 var(--accent-color);
   }
 
-  .hover-shift {
-    @apply transition-transform;
+  .shadow-brutal-black {
+    box-shadow: 4px 4px 0 0 #000000;
   }
 
-  .hover-shift:hover {
+  /* Hover effect with shadow shift */
+  .hover-lift {
+    @apply transition-all duration-150;
+  }
+
+  .hover-lift:hover {
     transform: translate(-2px, -2px);
     box-shadow: 6px 6px 0 0 var(--accent-color);
   }
 
+  /* Blinking cursor animation */
   .animate-blink {
     animation: blink 1s step-end infinite;
   }
@@ -126,5 +479,33 @@
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
+  }
+}
+
+/* =============================================================================
+   LEGACY COMPATIBILITY
+
+   Keep these for gradual migration. Prefer the new brutal-* classes above.
+   ============================================================================= */
+
+@layer components {
+  .brutalist-card {
+    @apply brutal-card;
+  }
+
+  .brutalist-input {
+    @apply brutal-input border-2;
+  }
+
+  .brutalist-btn {
+    @apply brutal-btn-primary;
+  }
+
+  .brutalist-btn-outline {
+    @apply brutal-btn-secondary;
+  }
+
+  .brutalist-link {
+    @apply brutal-link;
   }
 }

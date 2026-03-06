@@ -65,7 +65,7 @@ export function useAuth() {
 }
 
 export function useRequireAuth(redirectTo = '/signin') {
-  const { user, loading } = useAuth();
+  const { user, loading, refresh } = useAuth();
 
   React.useEffect(() => {
     if (!loading && !user) {
@@ -74,5 +74,5 @@ export function useRequireAuth(redirectTo = '/signin') {
     }
   }, [user, loading, redirectTo]);
 
-  return { user, loading, authenticated: !!user };
+  return { user, loading, authenticated: !!user, refreshUser: refresh };
 }

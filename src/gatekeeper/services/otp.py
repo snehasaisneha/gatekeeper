@@ -1,5 +1,5 @@
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gatekeeper.config import Settings, get_settings
 from gatekeeper.models.otp import MAX_OTP_ATTEMPTS, OTP, OTPPurpose
 from gatekeeper.services.email import EmailService
+
+
+def utcnow() -> datetime:
+    """Return current UTC time as naive datetime (for SQLite compatibility)."""
+    return datetime.utcnow()
 
 
 class OTPService:
@@ -24,7 +29,7 @@ class OTPService:
         await self._invalidate_previous(email, purpose)
 
         code = self._generate_code()
-        expires_at = datetime.now(UTC) + timedelta(minutes=self.settings.otp_expiry_minutes)
+        expires_at = utcnow() + timedelta(minutes=self.settings.otp_expiry_minutes)
 
         otp = OTP(
             email=email,
@@ -56,7 +61,7 @@ class OTPService:
                 OTP.email == email,
                 OTP.purpose == purpose,
                 OTP.used == False,  # noqa: E712
-                OTP.expires_at > datetime.now(UTC),
+                OTP.expires_at > utcnow(),
             )
             .order_by(OTP.created_at.desc())
             .limit(1)

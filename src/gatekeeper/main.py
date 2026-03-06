@@ -2,21 +2,53 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from gatekeeper.api.v1.router import router as v1_router
 from gatekeeper.config import get_settings
-from gatekeeper.database import init_db
+from gatekeeper.database import async_session_maker, init_db
 from gatekeeper.rate_limit import limiter
+from gatekeeper.services.security import SecurityService, get_client_ip
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 settings = get_settings()
+
+
+class BanCheckMiddleware(BaseHTTPMiddleware):
+    """Middleware to check if the client IP is banned."""
+
+    async def dispatch(self, request: Request, call_next):
+        # Only check auth endpoints to avoid unnecessary DB queries
+        if not request.url.path.startswith("/api/v1/auth"):
+            return await call_next(request)
+
+        # Get client IP
+        client_ip = get_client_ip(
+            dict(request.headers), request.client.host if request.client else "unknown"
+        )
+
+        # Check if IP is banned
+        try:
+            async with async_session_maker() as db:
+                security_service = SecurityService(db)
+                if await security_service.is_ip_banned(client_ip):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Access denied"},
+                    )
+        except Exception:
+            # If ban check fails (e.g., table doesn't exist), allow the request
+            # This ensures the app doesn't break if security tables aren't migrated
+            pass
+
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -43,6 +75,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Ban checking middleware (must be after CORS)
+app.add_middleware(BanCheckMiddleware)
 
 # Rate limiting
 app.state.limiter = limiter

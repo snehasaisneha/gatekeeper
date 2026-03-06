@@ -1,12 +1,10 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api, type App, type AppDetail, ApiError } from '@/lib/api';
 import {
-  Loader2,
   Plus,
   Trash2,
   Users,
@@ -238,7 +236,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-6 w-6 animate-spin" />
+        <div className="inline-block w-6 h-6 border-4 border-black border-t-transparent animate-spin" />
       </div>
     );
   }
@@ -254,7 +252,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <AppWindow className="h-5 w-5" />
-          <span className="font-medium">Apps ({apps.length})</span>
+          <span className="font-bold uppercase tracking-wider">Apps ({apps.length})</span>
         </div>
         <Button size="sm" onClick={() => setShowCreateModal(true)}>
           <Plus className="h-4 w-4 mr-1" />
@@ -270,106 +268,115 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
       )}
 
       {apps.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          No apps configured. Create one to get started.
+        <div className="text-center py-8 text-gray-500 border-4 border-dashed border-gray-300">
+          <p className="font-bold uppercase tracking-wider">No apps configured</p>
+          <p className="text-sm mt-1">Create one to get started.</p>
         </div>
       ) : (
         <div className="space-y-2">
           {apps.map((app) => (
-            <div key={app.slug} className="border rounded-lg">
+            <div key={app.slug} className="border-4 border-black">
               <div
-                className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50"
+                className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
                 onClick={() => handleToggleExpand(app.slug)}
               >
                 <div className="flex items-center gap-3">
-                  <AppWindow className="h-5 w-5 text-muted-foreground" />
+                  <AppWindow className="h-5 w-5 text-gray-500" />
                   <div>
-                    <p className="font-medium">{app.name}</p>
-                    <p className="text-sm text-muted-foreground">{app.slug}</p>
+                    <p className="font-bold">{app.name}</p>
+                    <p className="text-sm text-gray-500 font-mono">{app.slug}</p>
                     {app.description && (
-                      <p className="text-sm text-muted-foreground line-clamp-1">{app.description}</p>
+                      <p className="text-sm text-gray-500 line-clamp-1">{app.description}</p>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteApp(app.slug);
                     }}
                     disabled={actionLoading === `delete-${app.slug}`}
-                    className="text-destructive hover:text-destructive"
+                    className="text-red-600 hover:text-red-600"
                   >
                     {actionLoading === `delete-${app.slug}` ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <div className="w-4 h-4 border-2 border-red-600 border-t-transparent animate-spin" />
                     ) : (
                       <Trash2 className="h-4 w-4" />
                     )}
                   </Button>
                   {expandedApp === app.slug ? (
-                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                    <ChevronUp className="h-5 w-5 text-gray-500" />
                   ) : (
-                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                    <ChevronDown className="h-5 w-5 text-gray-500" />
                   )}
                 </div>
               </div>
 
               {expandedApp === app.slug && (
-                <div className="border-t p-4 bg-muted/30">
+                <div className="border-t-4 border-black p-4 bg-gray-50">
                   {isLoadingDetail ? (
                     <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-6 w-6 animate-spin" />
+                      <div className="inline-block w-6 h-6 border-4 border-black border-t-transparent animate-spin" />
                     </div>
                   ) : (
                     <div className="space-y-6">
                       {/* App Settings */}
                       <div className="space-y-4">
-                        <h4 className="font-medium text-sm flex items-center gap-2">
+                        <h4 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
                           <Settings className="h-4 w-4" />
                           App Settings
                         </h4>
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <Label htmlFor={`edit-name-${app.slug}`}>Display Name</Label>
+                            <label className="text-xs font-bold uppercase tracking-wider">
+                              Display Name
+                            </label>
                             <Input
-                              id={`edit-name-${app.slug}`}
                               value={editName}
                               onChange={(e) => setEditName(e.target.value)}
                               placeholder="App name"
+                              slim
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`edit-url-${app.slug}`}>App URL</Label>
+                            <label className="text-xs font-bold uppercase tracking-wider">
+                              App URL
+                            </label>
                             <Input
-                              id={`edit-url-${app.slug}`}
                               type="url"
                               value={editAppUrl}
                               onChange={(e) => setEditAppUrl(e.target.value)}
                               placeholder="https://myapp.example.com"
+                              slim
                             />
                           </div>
                         </div>
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <Label htmlFor={`edit-desc-${app.slug}`}>Description</Label>
+                            <label className="text-xs font-bold uppercase tracking-wider">
+                              Description
+                            </label>
                             <Input
-                              id={`edit-desc-${app.slug}`}
                               value={editDescription}
                               onChange={(e) => setEditDescription(e.target.value)}
                               placeholder="A brief description of your app"
+                              slim
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`edit-roles-${app.slug}`}>Roles</Label>
+                            <label className="text-xs font-bold uppercase tracking-wider">
+                              Roles
+                            </label>
                             <Input
-                              id={`edit-roles-${app.slug}`}
                               value={editRoles}
                               onChange={(e) => setEditRoles(e.target.value)}
                               placeholder="admin,user"
+                              slim
                             />
-                            <p className="text-xs text-muted-foreground">Comma-separated list of roles</p>
+                            <p className="text-xs text-gray-500">Comma-separated list of roles</p>
                           </div>
                         </div>
                         {hasAppChanges && (
@@ -379,38 +386,42 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                               onClick={handleSaveAppChanges}
                               disabled={isSavingApp}
                             >
-                              {isSavingApp && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                              {isSavingApp && (
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-2" />
+                              )}
                               Save Changes
                             </Button>
                           </div>
                         )}
                       </div>
 
-                      {/* Users with Access (external users with explicit grants) */}
+                      {/* Users with Access */}
                       <div>
-                        <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                        <h4 className="font-bold text-sm uppercase tracking-wider mb-1 flex items-center gap-2">
                           <Users className="h-4 w-4" />
                           Users with Access ({appDetail?.users.length || 0})
                         </h4>
-                        <p className="text-xs text-muted-foreground mb-3">
-                          External users with explicit access grants. Internal users automatically have access to all apps.
+                        <p className="text-xs text-gray-500 mb-3">
+                          External users with explicit access grants. Internal users automatically have access.
                         </p>
                         {!appDetail?.users.length ? (
-                          <p className="text-sm text-muted-foreground">No external users have explicit access grants.</p>
+                          <p className="text-sm text-gray-500 text-center p-4 border-2 border-dashed border-gray-300">
+                            No external users have explicit access grants.
+                          </p>
                         ) : (
-                          <div className="rounded-md border">
+                          <div className="border-2 border-black">
                             <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b bg-muted/50">
-                                  <th className="h-10 px-3 text-left font-medium">Email</th>
-                                  <th className="h-10 px-3 text-left font-medium">Role</th>
-                                  <th className="h-10 px-3 text-left font-medium">Granted</th>
-                                  <th className="h-10 px-3 text-right font-medium">Actions</th>
+                              <thead className="bg-black text-white">
+                                <tr>
+                                  <th className="p-3 text-left text-xs font-bold uppercase tracking-wider">Email</th>
+                                  <th className="p-3 text-left text-xs font-bold uppercase tracking-wider">Role</th>
+                                  <th className="p-3 text-left text-xs font-bold uppercase tracking-wider">Granted</th>
+                                  <th className="p-3 text-right text-xs font-bold uppercase tracking-wider">Actions</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {appDetail.users.map((user) => (
-                                  <tr key={user.email} className="border-b last:border-0">
+                                  <tr key={user.email} className="border-t-2 border-black">
                                     <td className="p-3">{user.email}</td>
                                     <td className="p-3">
                                       {editingUserRole === user.email ? (
@@ -418,7 +429,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                                           <select
                                             value={editUserRoleValue}
                                             onChange={(e) => setEditUserRoleValue(e.target.value)}
-                                            className="h-8 w-28 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                                            className="h-8 w-28 border-2 border-black px-2 text-sm"
                                           >
                                             <option value="">No role</option>
                                             {(appDetail?.roles || 'admin,user').split(',').map((role) => (
@@ -429,19 +440,19 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                                           </select>
                                           <Button
                                             variant="ghost"
-                                            size="sm"
+                                            size="icon"
                                             onClick={() => handleSaveUserRole(user.email)}
                                             disabled={actionLoading === `role-${user.email}`}
                                           >
                                             {actionLoading === `role-${user.email}` ? (
-                                              <Loader2 className="h-4 w-4 animate-spin" />
+                                              <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin" />
                                             ) : (
                                               <Check className="h-4 w-4" />
                                             )}
                                           </Button>
                                           <Button
                                             variant="ghost"
-                                            size="sm"
+                                            size="icon"
                                             onClick={() => setEditingUserRole(null)}
                                           >
                                             <X className="h-4 w-4" />
@@ -450,34 +461,34 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                                       ) : (
                                         <div className="flex items-center gap-2">
                                           {user.role ? (
-                                            <Badge variant="outline">{user.role}</Badge>
+                                            <Badge variant="secondary">{user.role}</Badge>
                                           ) : (
-                                            <span className="text-muted-foreground">—</span>
+                                            <span className="text-gray-400">—</span>
                                           )}
                                           <Button
                                             variant="ghost"
-                                            size="sm"
+                                            size="icon"
                                             onClick={() => startEditingRole(user.email, user.role)}
-                                            className="h-6 w-6 p-0"
+                                            className="h-6 w-6"
                                           >
                                             <Pencil className="h-3 w-3" />
                                           </Button>
                                         </div>
                                       )}
                                     </td>
-                                    <td className="p-3 text-muted-foreground">
+                                    <td className="p-3 text-gray-500">
                                       {new Date(user.granted_at).toLocaleDateString()}
                                     </td>
                                     <td className="p-3 text-right">
                                       <Button
                                         variant="ghost"
-                                        size="sm"
+                                        size="icon"
                                         onClick={() => handleRevokeAccess(user.email)}
                                         disabled={actionLoading === `revoke-${user.email}`}
-                                        className="text-destructive hover:text-destructive"
+                                        className="text-red-600 hover:text-red-600"
                                       >
                                         {actionLoading === `revoke-${user.email}` ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                          <div className="w-4 h-4 border-2 border-red-600 border-t-transparent animate-spin" />
                                         ) : (
                                           <UserMinus className="h-4 w-4" />
                                         )}
@@ -493,7 +504,7 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
 
                       {/* Grant Access Form */}
                       <div>
-                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                        <h4 className="font-bold text-sm uppercase tracking-wider mb-2 flex items-center gap-2">
                           <UserPlus className="h-4 w-4" />
                           Grant Access
                         </h4>
@@ -505,11 +516,12 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                             type="email"
                             required
                             className="flex-1"
+                            slim
                           />
                           <select
                             value={grantRole}
                             onChange={(e) => setGrantRole(e.target.value)}
-                            className="h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            className="h-10 w-32 border-2 border-black px-3 text-sm"
                           >
                             <option value="">No role</option>
                             {(appDetail?.roles || 'admin,user').split(',').map((role) => (
@@ -518,8 +530,12 @@ export function AppManagement({ onRefresh }: AppManagementProps) {
                               </option>
                             ))}
                           </select>
-                          <Button type="submit" disabled={isGranting}>
-                            {isGranting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Grant'}
+                          <Button type="submit" disabled={isGranting} size="sm">
+                            {isGranting ? (
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin" />
+                            ) : (
+                              'Grant'
+                            )}
                           </Button>
                         </form>
                       </div>

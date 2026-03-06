@@ -2,9 +2,8 @@ import * as React from 'react';
 import { api, ApiError, type DeploymentConfig } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, X, Copy, Check, ExternalLink, ArrowRight, ArrowLeft } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, ArrowRight, ArrowLeft, AppWindow } from 'lucide-react';
 
 interface CreateAppModalProps {
   onClose: () => void;
@@ -185,19 +184,19 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   }) => (
     <div className="relative">
       {title && (
-        <div className="text-xs text-muted-foreground mb-1 font-medium">{title}</div>
+        <div className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">{title}</div>
       )}
-      <div className="bg-muted rounded-md p-3 pr-10 font-mono text-sm overflow-x-auto">
+      <div className="bg-gray-100 border-2 border-black p-3 pr-10 font-mono text-sm overflow-x-auto">
         <pre className="whitespace-pre-wrap break-all">{code}</pre>
       </div>
       <Button
         variant="ghost"
-        size="sm"
-        className="absolute top-1 right-1 h-7 w-7 p-0"
+        size="icon"
+        className="absolute top-1 right-1 h-7 w-7"
         onClick={() => copyToClipboard(code, id)}
       >
         {copiedId === id ? (
-          <Check className="h-3.5 w-3.5 text-green-500" />
+          <Check className="h-3.5 w-3.5 text-green-600" />
         ) : (
           <Copy className="h-3.5 w-3.5" />
         )}
@@ -209,50 +208,54 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
-      <div className="relative bg-background border rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-muted-foreground hover:text-foreground z-10"
-        >
-          <X className="h-5 w-5" />
-        </button>
+      <div className="relative bg-white border-4 border-black w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="bg-black text-white p-4 flex justify-between items-center">
+          <h2 className="font-bold uppercase tracking-wider flex items-center gap-2">
+            <AppWindow className="h-5 w-5" />
+            Create New App
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-white hover:text-gray-300"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-        {/* Header with step indicator */}
-        <div className="p-6 pb-4">
-          <h2 className="text-lg font-semibold">Create New App</h2>
-          <div className="flex items-center gap-2 mt-3">
-            <div
-              className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium ${
-                step === 1
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-primary/20 text-primary'
-              }`}
-            >
-              1
-            </div>
-            <span className={`text-sm ${step === 1 ? 'font-medium' : 'text-muted-foreground'}`}>
-              App Details
-            </span>
-            <div className="w-8 h-px bg-border" />
-            <div
-              className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium ${
-                step === 2
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              2
-            </div>
-            <span className={`text-sm ${step === 2 ? 'font-medium' : 'text-muted-foreground'}`}>
-              Nginx Setup
-            </span>
+        {/* Step Indicator */}
+        <div className="p-4 border-b-4 border-black flex items-center gap-2">
+          <div
+            className={`flex items-center justify-center w-6 h-6 text-xs font-bold ${
+              step === 1
+                ? 'bg-black text-white'
+                : 'bg-gray-200 text-black'
+            }`}
+          >
+            1
           </div>
+          <span className={`text-sm font-bold uppercase tracking-wider ${step === 1 ? '' : 'text-gray-500'}`}>
+            App Details
+          </span>
+          <div className="w-8 h-0.5 bg-black" />
+          <div
+            className={`flex items-center justify-center w-6 h-6 text-xs font-bold ${
+              step === 2
+                ? 'bg-black text-white'
+                : 'bg-gray-200 text-gray-500'
+            }`}
+          >
+            2
+          </div>
+          <span className={`text-sm font-bold uppercase tracking-wider ${step === 2 ? '' : 'text-gray-500'}`}>
+            Nginx Setup
+          </span>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 overflow-y-auto p-6">
           {step === 1 && (
             <div className="space-y-4">
               {error && (
@@ -262,31 +265,33 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="slug">Slug</Label>
+                <label className="text-xs font-bold uppercase tracking-wider">Slug</label>
                 <Input
-                  id="slug"
                   value={slug}
                   onChange={(e) =>
                     setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
                   }
                   placeholder="my-app"
                   autoFocus
+                  slim
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500">
                   Lowercase, alphanumeric and hyphens only
                 </p>
 
                 {/* URL Preview */}
                 {!isLoadingConfig && (
-                  <div className="mt-3 p-3 bg-muted/50 rounded-md border">
-                    <p className="text-xs text-muted-foreground mb-1">Your app will be available at:</p>
+                  <div className="mt-3 p-3 bg-gray-100 border-2 border-black">
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                      Your app will be available at:
+                    </p>
                     <p className="font-mono text-sm">
                       {slug ? (
-                        <span className="text-foreground">
-                          https://<span className="text-primary font-semibold">{slug}</span>.{getBaseDomain()}
+                        <span>
+                          https://<span className="font-bold">{slug}</span>.{getBaseDomain()}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">
+                        <span className="text-gray-400">
                           https://<span className="italic">your-slug</span>.{getBaseDomain()}
                         </span>
                       )}
@@ -296,25 +301,25 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="name">Display Name</Label>
+                <label className="text-xs font-bold uppercase tracking-wider">Display Name</label>
                 <Input
-                  id="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="My App"
+                  slim
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500">
                   The name shown to users in the dashboard
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
+                <label className="text-xs font-bold uppercase tracking-wider">Description (optional)</label>
                 <Input
-                  id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="A brief description of your app"
+                  slim
                 />
               </div>
             </div>
@@ -330,33 +335,33 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
               {isLoadingConfig ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <div className="inline-block w-6 h-6 border-4 border-black border-t-transparent animate-spin" />
                 </div>
               ) : (
                 <>
                   {/* Summary card */}
-                  <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+                  <div className="bg-gray-100 border-2 border-black p-4">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="font-medium">{name}</p>
-                        <p className="text-sm text-muted-foreground font-mono">{getAppUrl()}</p>
+                        <p className="font-bold">{name}</p>
+                        <p className="text-sm text-gray-500 font-mono">{getAppUrl()}</p>
                       </div>
                       <a
                         href="https://gatekeeper-gk.readthedocs.io/en/latest/getting-started/first-app.html"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                        className="text-xs font-bold uppercase tracking-wider hover:underline flex items-center gap-1"
                       >
                         Full docs <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                   </div>
 
-                  {/* DNS instruction - moved to top */}
-                  <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                  {/* DNS instruction */}
+                  <div className="bg-orange-100 border-2 border-orange-500 p-3">
+                    <p className="text-sm">
                       <strong>First:</strong> Point{' '}
-                      <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded text-xs">
+                      <code className="bg-orange-200 px-1 font-mono text-xs">
                         {getAppDomain()}
                       </code>{' '}
                       to your server's IP address in DNS.
@@ -366,58 +371,62 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                   {/* App-specific config inputs */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="private-ip">Private IP / Hostname</Label>
+                      <label className="text-xs font-bold uppercase tracking-wider">
+                        Private IP / Hostname
+                      </label>
                       <Input
-                        id="private-ip"
                         value={privateIp}
                         onChange={(e) => setPrivateIp(e.target.value)}
                         placeholder="127.0.0.1"
+                        slim
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-gray-500">
                         Internal IP where your app runs
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="app-port">App Port</Label>
+                      <label className="text-xs font-bold uppercase tracking-wider">
+                        App Port
+                      </label>
                       <Input
-                        id="app-port"
                         value={appPort}
                         onChange={(e) => setAppPort(e.target.value)}
                         placeholder="3000"
+                        slim
                       />
-                      <p className="text-xs text-muted-foreground">Port your app listens on</p>
+                      <p className="text-xs text-gray-500">Port your app listens on</p>
                     </div>
                   </div>
 
-                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <div className="bg-blue-100 border-2 border-blue-500 p-3">
+                    <p className="text-sm">
                       <strong>Serving static files?</strong> Run a simple server in your docs folder:
                     </p>
                     <div className="mt-2 space-y-1">
                       <CodeBlock code="python -m http.server 8000" id="static-python" />
-                      <p className="text-xs text-blue-600 dark:text-blue-400">or</p>
+                      <p className="text-xs text-blue-600 text-center">or</p>
                       <CodeBlock code="npx serve -p 8000" id="static-npx" />
                     </div>
                   </div>
 
                   {/* Step 1: Install Nginx */}
                   <div className="space-y-3">
-                    <h3 className="font-semibold">1. Install Nginx</h3>
-                    <p className="text-sm text-muted-foreground">Update packages and install nginx:</p>
+                    <h3 className="font-bold uppercase tracking-wider">1. Install Nginx</h3>
+                    <p className="text-sm text-gray-500">Update packages and install nginx:</p>
                     <CodeBlock code="sudo apt update && sudo apt install -y nginx" id="install" />
                   </div>
 
                   {/* Step 2: Create config file */}
                   <div className="space-y-3">
-                    <h3 className="font-semibold">2. Create Configuration File</h3>
-                    <p className="text-sm text-muted-foreground">Open the nginx config file:</p>
+                    <h3 className="font-bold uppercase tracking-wider">2. Create Configuration File</h3>
+                    <p className="text-sm text-gray-500">Open the nginx config file:</p>
                     <CodeBlock code={`sudo nano /etc/nginx/sites-available/${getAppDomain()}`} id="create-site" />
                   </div>
 
                   {/* Step 3: Nginx config */}
                   <div className="space-y-3">
-                    <h3 className="font-semibold">3. Nginx Configuration</h3>
-                    <p className="text-sm text-muted-foreground">
+                    <h3 className="font-bold uppercase tracking-wider">3. Nginx Configuration</h3>
+                    <p className="text-sm text-gray-500">
                       Paste this configuration, then save with Ctrl+X, Y, Enter:
                     </p>
                     <CodeBlock code={getNginxConfig()} id="nginx-config" />
@@ -425,36 +434,36 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
                   {/* Step 4: Enable site */}
                   <div className="space-y-3">
-                    <h3 className="font-semibold">4. Enable Site</h3>
+                    <h3 className="font-bold uppercase tracking-wider">4. Enable Site</h3>
 
-                    <p className="text-sm text-muted-foreground">Create symlink to enable the site:</p>
+                    <p className="text-sm text-gray-500">Create symlink to enable the site:</p>
                     <CodeBlock code={`sudo ln -s /etc/nginx/sites-available/${getAppDomain()} /etc/nginx/sites-enabled/`} id="symlink" />
 
-                    <p className="text-sm text-muted-foreground">Test nginx configuration:</p>
+                    <p className="text-sm text-gray-500">Test nginx configuration:</p>
                     <CodeBlock code="sudo nginx -t" id="nginx-test" />
 
-                    <p className="text-sm text-muted-foreground">Reload nginx:</p>
+                    <p className="text-sm text-gray-500">Reload nginx:</p>
                     <CodeBlock code="sudo systemctl reload nginx" id="nginx-reload" />
                   </div>
 
                   {/* Step 5: SSL */}
                   <div className="space-y-3">
-                    <h3 className="font-semibold">5. Set Up SSL</h3>
+                    <h3 className="font-bold uppercase tracking-wider">5. Set Up SSL</h3>
 
-                    <p className="text-sm text-muted-foreground">Install certbot:</p>
+                    <p className="text-sm text-gray-500">Install certbot:</p>
                     <CodeBlock code="sudo apt install -y certbot" id="certbot-install" />
 
-                    <p className="text-sm text-muted-foreground">Get SSL certificate:</p>
+                    <p className="text-sm text-gray-500">Get SSL certificate:</p>
                     <CodeBlock code={`sudo certbot --nginx -d ${getAppDomain()}`} id="certbot-run" />
                   </div>
 
                   {/* Logout note */}
-                  <div className="bg-muted/50 border rounded-lg p-3">
-                    <p className="text-sm text-muted-foreground">
-                      <strong className="text-foreground">Logout:</strong> Link to{' '}
-                      <code className="bg-muted px-1 rounded text-xs">/logout</code>,{' '}
-                      <code className="bg-muted px-1 rounded text-xs">/signout</code>, or{' '}
-                      <code className="bg-muted px-1 rounded text-xs">/_gk/logout</code>{' '}
+                  <div className="bg-gray-100 border-2 border-black p-3">
+                    <p className="text-sm text-gray-600">
+                      <strong className="text-black">Logout:</strong> Link to{' '}
+                      <code className="bg-gray-200 px-1 font-mono text-xs">/logout</code>,{' '}
+                      <code className="bg-gray-200 px-1 font-mono text-xs">/signout</code>, or{' '}
+                      <code className="bg-gray-200 px-1 font-mono text-xs">/_gk/logout</code>{' '}
                       to sign users out via Gatekeeper.
                     </p>
                   </div>
@@ -464,11 +473,11 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
           )}
         </div>
 
-        {/* Footer with navigation */}
-        <div className="border-t p-4 flex justify-between">
+        {/* Footer */}
+        <div className="border-t-4 border-black p-4 flex justify-between">
           {step === 1 ? (
             <>
-              <Button variant="outline" onClick={onClose}>
+              <Button variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
               <Button onClick={handleNext} disabled={!canProceed}>
@@ -478,12 +487,14 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
+              <Button variant="secondary" onClick={handleBack} disabled={isSubmitting}>
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>
               <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isSubmitting && (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-2" />
+                )}
                 Create App
               </Button>
             </>

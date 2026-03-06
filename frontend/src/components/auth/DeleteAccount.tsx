@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 import { api, ApiError } from '@/lib/api';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Trash2, AlertTriangle } from 'lucide-react';
 
 interface DeleteAccountProps {
   isSeeded: boolean;
@@ -34,17 +35,14 @@ export function DeleteAccount({ isSeeded }: DeleteAccountProps) {
   };
 
   return (
-    <Card className="border-destructive">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-destructive">
-          <Trash2 className="h-5 w-5" />
-          Delete Account
+    <Card className="border-red-600">
+      <CardHeader className="border-b-4 border-red-600 bg-red-600 text-white p-4">
+        <CardTitle className="flex items-center gap-2 text-white">
+          <AlertTriangle className="h-5 w-5" />
+          Danger Zone
         </CardTitle>
-        <CardDescription>
-          Permanently delete your account and all associated data
-        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-4 space-y-4">
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
@@ -52,34 +50,34 @@ export function DeleteAccount({ isSeeded }: DeleteAccountProps) {
         )}
 
         {isSeeded ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-gray-500">
             This is a seeded admin account and cannot be deleted.
           </p>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
-              This action cannot be undone. All your data, including passkeys and sessions, will be permanently deleted.
+            <p className="text-sm text-gray-600">
+              Permanently delete your account and all associated data. This action cannot be undone.
             </p>
             <div className="space-y-2">
-              <label htmlFor="confirm" className="text-sm font-medium">
-                Type <span className="font-mono font-bold">DELETE</span> to confirm
+              <label className="text-xs font-bold uppercase tracking-wider">
+                Type <span className="font-mono bg-gray-100 px-1">DELETE</span> to confirm
               </label>
-              <input
-                id="confirm"
-                type="text"
+              <Input
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 placeholder="DELETE"
+                slim
+                error={confirmText.length > 0 && confirmText !== 'DELETE'}
               />
             </div>
             <Button
               variant="destructive"
               onClick={handleDelete}
               disabled={isDeleting || confirmText !== 'DELETE'}
+              size="sm"
             >
               {isDeleting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-2" />
               ) : (
                 <Trash2 className="h-4 w-4 mr-2" />
               )}

@@ -1,12 +1,11 @@
 import * as React from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { api, ApiError } from '@/lib/api';
-import { Loader2, KeyRound, Trash2, Plus, X } from 'lucide-react';
+import { KeyRound, Trash2, Plus, X } from 'lucide-react';
 
 interface Passkey {
   id: string;
@@ -112,16 +111,17 @@ export function PasskeyManager() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+      <CardHeader className="border-b-4 border-black bg-black text-white p-4">
+        <CardTitle className="flex items-center gap-2 text-white">
           <KeyRound className="h-5 w-5" />
           Passkeys
         </CardTitle>
-        <CardDescription>
-          Manage your passkeys for passwordless sign-in
-        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-4 space-y-4">
+        <p className="text-xs text-gray-500">
+          Manage your passkeys for passwordless sign-in
+        </p>
+
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
@@ -135,32 +135,39 @@ export function PasskeyManager() {
         )}
 
         {showNameInput ? (
-          <div className="space-y-3 p-3 rounded-lg border bg-muted/50">
-            <Label htmlFor="passkey-name">Passkey Name (optional)</Label>
+          <div className="space-y-3 p-4 border-4 border-black bg-gray-50">
+            <label className="text-xs font-bold uppercase tracking-wider">
+              Passkey Name (optional)
+            </label>
             <Input
-              id="passkey-name"
               placeholder="e.g., MacBook Pro, iPhone"
               value={passkeyName}
               onChange={(e) => setPasskeyName(e.target.value)}
               maxLength={50}
+              slim
             />
             <div className="flex gap-2">
-              <Button onClick={handleRegister} disabled={isRegistering}>
+              <Button onClick={handleRegister} disabled={isRegistering} size="sm">
                 {isRegistering ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-2" />
                 ) : (
                   <Plus className="h-4 w-4 mr-2" />
                 )}
-                Register Passkey
+                Register
               </Button>
-              <Button variant="outline" onClick={handleCancelRegister} disabled={isRegistering}>
+              <Button
+                variant="secondary"
+                onClick={handleCancelRegister}
+                disabled={isRegistering}
+                size="sm"
+              >
                 <X className="h-4 w-4 mr-2" />
                 Cancel
               </Button>
             </div>
           </div>
         ) : (
-          <Button onClick={handleStartRegister}>
+          <Button onClick={handleStartRegister} size="sm">
             <Plus className="h-4 w-4 mr-2" />
             Add Passkey
           </Button>
@@ -168,34 +175,34 @@ export function PasskeyManager() {
 
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin" />
+            <div className="inline-block w-6 h-6 border-4 border-black border-t-transparent animate-spin" />
           </div>
         ) : passkeys.length === 0 ? (
-          <p className="text-center text-muted-foreground py-4">
-            No passkeys registered yet. Add one to enable passwordless sign-in.
+          <p className="text-center text-gray-500 py-4 text-sm">
+            No passkeys registered yet.
           </p>
         ) : (
           <div className="space-y-2">
             {passkeys.map((passkey) => (
               <div
                 key={passkey.id}
-                className="flex items-center justify-between p-3 rounded-lg border"
+                className="flex items-center justify-between p-3 border-2 border-black hover:bg-gray-50"
               >
                 <div>
-                  <p className="font-medium">{passkey.name}</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="font-bold text-sm">{passkey.name}</p>
+                  <p className="text-xs text-gray-500">
                     Added {new Date(passkey.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon"
                   onClick={() => handleDelete(passkey.id)}
                   disabled={deletingId === passkey.id}
-                  className="text-destructive hover:text-destructive"
+                  className="text-red-600 hover:text-red-600"
                 >
                   {deletingId === passkey.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <div className="w-4 h-4 border-2 border-red-600 border-t-transparent animate-spin" />
                   ) : (
                     <Trash2 className="h-4 w-4" />
                   )}

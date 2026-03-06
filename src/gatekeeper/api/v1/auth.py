@@ -1,12 +1,13 @@
 import base64
 import json
+import logging
 import secrets
 import uuid
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
@@ -38,6 +39,8 @@ from gatekeeper.services.otp import OTPService
 from gatekeeper.services.passkey import PasskeyService
 from gatekeeper.services.session import SessionService
 from gatekeeper.utils.security import create_signed_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -533,10 +536,16 @@ GITHUB_EMAILS_URL = "https://api.github.com/user/emails"
 @router.post(
     "/passkey/register/options",
     response_model=dict[str, Any],
+    responses={
+        429: {"model": ErrorResponse, "description": "Too many requests"},
+    },
     summary="Get passkey registration options",
     description="Get WebAuthn options for registering a new passkey. Requires authentication.",
 )
-async def passkey_register_options(current_user: CurrentUser, db: DbSession) -> dict[str, Any]:
+@limiter.limit("10/15minutes")
+async def passkey_register_options(
+    request: Request, current_user: CurrentUser, db: DbSession
+) -> dict[str, Any]:
     passkey_service = PasskeyService(db)
     options = await passkey_service.generate_registration_options(current_user)
     # Store challenge at module level so it persists across requests
@@ -551,12 +560,15 @@ async def passkey_register_options(current_user: CurrentUser, db: DbSession) -> 
     responses={
         200: {"description": "Passkey registered successfully"},
         400: {"model": ErrorResponse, "description": "Passkey registration failed"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Complete passkey registration",
     description="Verify and save a new passkey credential.",
 )
+@limiter.limit("10/15minutes")
 async def passkey_register_verify(
-    request: PasskeyVerifyRequest,
+    request: Request,
+    data: PasskeyVerifyRequest,
     current_user: CurrentUser,
     db: DbSession,
 ) -> MessageResponse:
@@ -569,8 +581,8 @@ async def passkey_register_verify(
         )
 
     passkey_service = PasskeyService(db)
-    credential_dict = request.credential.model_dump()
-    passkey_name = request.name or "Passkey"
+    credential_dict = data.credential.model_dump()
+    passkey_name = data.name or "Passkey"
     passkey = await passkey_service.verify_registration_with_challenge(
         current_user, credential_dict, challenge, name=passkey_name
     )
@@ -617,12 +629,14 @@ async def passkey_signin_options(
     responses={
         200: {"description": "Sign-in successful"},
         400: {"model": ErrorResponse, "description": "Passkey authentication failed"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
     },
     summary="Complete passkey sign-in",
     description="Verify passkey authentication and create a session.",
 )
+@limiter.limit("10/15minutes")
 async def passkey_signin_verify(
-    http_request: Request,
+    request: Request,
     data: PasskeyVerifyRequest,
     response: Response,
     db: DbSession,
@@ -651,9 +665,7 @@ async def passkey_signin_verify(
     user = await passkey_service.verify_authentication(credential_dict, challenge)
 
     if not user:
-        await audit_service.log_auth_failed(
-            "passkey", None, http_request, reason="Invalid credential"
-        )
+        await audit_service.log_auth_failed("passkey", None, request, reason="Invalid credential")
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -662,7 +674,7 @@ async def passkey_signin_verify(
 
     if user.status != UserStatus.APPROVED:
         await audit_service.log_auth_failed(
-            "passkey", user.email, http_request, reason="Account not approved"
+            "passkey", user.email, request, reason="Account not approved"
         )
         await db.commit()
         raise HTTPException(
@@ -674,7 +686,7 @@ async def passkey_signin_verify(
     session = await session_service.create(user)
 
     # Log successful sign-in
-    await audit_service.log_auth_success("passkey", user, http_request)
+    await audit_service.log_auth_success("passkey", user, request)
 
     await db.commit()  # Commit before responding so /auth/me can find the session
     set_session_cookie(response, session.token)
@@ -708,9 +720,9 @@ async def list_passkeys(current_user: CurrentUser, db: DbSession) -> list[Passke
     description="Delete a registered passkey.",
 )
 async def delete_passkey(
-    passkey_id: str = Path(..., description="UUID of the passkey to delete"),
-    current_user: CurrentUser = None,
-    db: DbSession = None,
+    passkey_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
 ) -> MessageResponse:
     try:
         pk_uuid = uuid.UUID(passkey_id)
@@ -904,6 +916,7 @@ async def google_callback(
         await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
     except Exception:
+        logger.exception("Unexpected error in Google OAuth callback")
         return create_redirect(f"{settings.frontend_url}/signin?error=internal_error")
 
 
@@ -1138,6 +1151,7 @@ async def github_callback(
         await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
     except Exception:
+        logger.exception("Unexpected error in GitHub OAuth callback")
         return create_redirect(f"{settings.frontend_url}/signin?error=internal_error")
 
 

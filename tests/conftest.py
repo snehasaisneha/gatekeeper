@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from gatekeeper.database import Base
 from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.otp import OTP, OTPPurpose
+from gatekeeper.models.security import (  # noqa: F401 - needed for table creation
+    BannedEmail,
+    BannedIP,
+)
 from gatekeeper.models.user import User, UserStatus
 
 

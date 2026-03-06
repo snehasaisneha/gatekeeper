@@ -12,6 +12,7 @@ from gatekeeper.models.app import App, UserAppAccess
 from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.branding import Branding
 from gatekeeper.models.domain import ApprovedDomain
+from gatekeeper.models.security import BannedEmail, BannedIP, BanReason
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.schemas.admin import (
     AdminCreateUser,
@@ -63,6 +64,8 @@ def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
         is_admin=user.is_admin,
         is_seeded=user.is_seeded,
         is_internal=is_internal,
+        notify_new_registrations=user.notify_new_registrations,
+        notify_all_registrations=user.notify_all_registrations,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -114,13 +117,16 @@ async def list_domains(admin: AdminUser, db: DbSession) -> DomainList:
     description="Add a new approved email domain. Users from this domain are internal. Admin only.",
 )
 async def add_domain(request: DomainCreate, admin: AdminUser, db: DbSession) -> DomainRead:
+    import re
+
     domain = request.domain.lower().strip()
 
-    # Validate domain format
-    if not domain or "." not in domain:
+    # Validate domain format with regex
+    domain_regex = re.compile(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")
+    if not domain or not domain_regex.match(domain):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid domain format",
+            detail="Invalid domain format. Example: example.com",
         )
 
     stmt = select(ApprovedDomain).where(ApprovedDomain.domain == domain)
@@ -362,6 +368,12 @@ async def update_user(
     if request.is_admin is not None:
         user.is_admin = request.is_admin
 
+    if request.notify_new_registrations is not None:
+        user.notify_new_registrations = request.notify_new_registrations
+
+    if request.notify_all_registrations is not None:
+        user.notify_all_registrations = request.notify_all_registrations
+
     await db.flush()
     await db.refresh(user)
 
@@ -441,10 +453,106 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
         )
 
     user.status = UserStatus.REJECTED
+    approved_domains = await _get_approved_domains_set(db)
+
+    # Cross-ban: Ban the email
+    email_ban = BannedEmail(
+        email=user.email.lower(),
+        is_pattern=False,
+        reason=BanReason.REJECTED_USER.value,
+        details=f"User rejected by {admin.email}",
+        banned_by=admin.email,
+        expires_at=None,  # Permanent
+        is_active=True,
+    )
+    db.add(email_ban)
+
+    # Cross-ban: Find the IP used during registration and ban it
+    # Look for the first successful OTP verification for this user
+    registration_log_stmt = (
+        select(AuditLog)
+        .where(
+            AuditLog.event_type == "auth.signin.otp_success",
+            AuditLog.actor_email == user.email,
+        )
+        .order_by(AuditLog.created_at.asc())
+        .limit(1)
+    )
+    registration_log_result = await db.execute(registration_log_stmt)
+    registration_log = registration_log_result.scalar_one_or_none()
+
+    registration_ip = None
+    if registration_log and registration_log.details:
+        registration_ip = registration_log.details.get("ip_address")
+
+    if registration_ip:
+        # Check if the IP has been used by any approved domain user (don't ban)
+        user_domain = user.email.split("@")[-1].lower()
+        is_user_from_approved_domain = user_domain in approved_domains
+
+        if not is_user_from_approved_domain:
+            # Check if any approved user has used this IP
+            ip_logs_stmt = (
+                select(AuditLog)
+                .where(
+                    AuditLog.details.contains({"ip_address": registration_ip}),
+                )
+                .limit(50)
+            )
+            ip_logs_result = await db.execute(ip_logs_stmt)
+            ip_logs = ip_logs_result.scalars().all()
+
+            has_approved_domain_user = False
+            for log in ip_logs:
+                if log.actor_email:
+                    log_domain = log.actor_email.split("@")[-1].lower()
+                    if log_domain in approved_domains:
+                        has_approved_domain_user = True
+                        break
+
+            if not has_approved_domain_user:
+                # Ban the IP
+                ip_ban = BannedIP(
+                    ip_address=registration_ip,
+                    reason=BanReason.REJECTED_USER.value,
+                    details=f"Associated with rejected user: {user.email}",
+                    banned_by=admin.email,
+                    expires_at=None,  # Permanent
+                    is_active=True,
+                    associated_email=user.email.lower(),
+                )
+                db.add(ip_ban)
+
+                # Update email ban with associated IP
+                email_ban.associated_ip = registration_ip
+
+                # Log the IP ban
+                ip_ban_audit = AuditLog(
+                    event_type="security.ip.banned.cross",
+                    actor_email=admin.email,
+                    details={
+                        "ip_address": registration_ip,
+                        "reason": BanReason.REJECTED_USER.value,
+                        "associated_email": user.email,
+                    },
+                )
+                db.add(ip_ban_audit)
+
+    # Log the email ban
+    email_ban_audit = AuditLog(
+        event_type="security.email.banned.rejected",
+        actor_email=admin.email,
+        details={
+            "email": user.email,
+            "reason": BanReason.REJECTED_USER.value,
+            "associated_ip": registration_ip,
+        },
+    )
+    db.add(email_ban_audit)
+
     await db.flush()
     await db.refresh(user)
 
-    approved_domains = await _get_approved_domains_set(db)
     return _user_to_read(user, approved_domains)
 
 

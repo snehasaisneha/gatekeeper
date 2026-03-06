@@ -2,19 +2,35 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
+/**
+ * Badge Component - Gatekeeper Design System
+ *
+ * Brutalist badges with thick borders, no border-radius.
+ * Uppercase text with tracking.
+ */
+
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  // Base styles - no rounded corners, uppercase, bold
+  'inline-flex items-center border-2 px-2 py-0.5 text-xs font-bold uppercase tracking-wider transition-colors',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
-        secondary:
-          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive:
-          'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
-        outline: 'text-foreground',
-        success: 'border-transparent bg-gray-100 text-gray-800',
-        warning: 'border-transparent bg-gray-200 text-gray-800',
+        // Outline variants (border + text color)
+        default: 'border-black text-black',
+        secondary: 'border-gray-400 text-gray-600',
+        destructive: 'border-red-600 text-red-600',
+        success: 'border-green-600 text-green-600',
+        warning: 'border-amber-600 text-amber-600',
+
+        // Solid variants (filled background)
+        solid: 'border-black bg-black text-white',
+        'solid-secondary': 'border-gray-400 bg-gray-400 text-white',
+        'solid-destructive': 'border-red-600 bg-red-600 text-white',
+        'solid-success': 'border-green-600 bg-green-600 text-white',
+        'solid-warning': 'border-amber-600 bg-amber-600 text-white',
+
+        // Legacy support
+        outline: 'border-black text-black',
       },
     },
     defaultVariants: {

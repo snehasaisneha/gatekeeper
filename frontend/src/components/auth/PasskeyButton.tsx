@@ -2,7 +2,7 @@ import * as React from 'react';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { Button } from '@/components/ui/button';
 import { api, ApiError } from '@/lib/api';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 
 interface PasskeyButtonProps {
   email?: string;
@@ -52,7 +52,7 @@ export function PasskeyButton({ email, onSuccess, onError, className }: PasskeyB
       className={className}
     >
       {isLoading ? (
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        <div className="mr-2 h-4 w-4 border-2 border-current border-t-transparent animate-spin" />
       ) : (
         <KeyRound className="mr-2 h-4 w-4" />
       )}

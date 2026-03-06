@@ -33,8 +33,20 @@ class AdminUpdateUser(BaseModel):
         description="New user status (pending, approved, rejected)",
     )
     is_admin: bool | None = Field(default=None, description="Set admin privileges")
+    notify_new_registrations: bool | None = Field(
+        default=None,
+        description="Email notifications for new pending registrations (admin only)",
+    )
+    notify_all_registrations: bool | None = Field(
+        default=None,
+        description="Email notifications for all new sign-ups (admin only)",
+    )
 
-    model_config = {"json_schema_extra": {"example": {"status": "approved", "is_admin": False}}}
+    model_config = {
+        "json_schema_extra": {
+            "example": {"status": "approved", "is_admin": False, "notify_new_registrations": True}
+        }
+    }
 
 
 class UserList(BaseModel):

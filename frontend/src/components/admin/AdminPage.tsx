@@ -15,8 +15,11 @@ function AdminPageContent({ appName }: AdminPageProps) {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-4 border-black border-t-transparent animate-spin"></div>
+          <p className="mt-4 text-sm font-bold uppercase tracking-wider">Loading...</p>
+        </div>
       </div>
     );
   }

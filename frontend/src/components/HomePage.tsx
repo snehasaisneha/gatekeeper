@@ -2,6 +2,7 @@ import * as React from 'react';
 import { AuthProvider, useRequireAuth } from './AuthContext';
 import { TopBar } from './TopBar';
 import { AppCard } from './AppCard';
+import { NameSetupModal } from './auth/NameSetupModal';
 import { api } from '@/lib/api';
 import type { UserAppAccess } from '@/lib/api';
 
@@ -10,9 +11,21 @@ interface HomePageProps {
 }
 
 function HomePageContent({ appName }: HomePageProps) {
-  const { user, loading: authLoading } = useRequireAuth();
+  const { user, loading: authLoading, refreshUser } = useRequireAuth();
   const [apps, setApps] = React.useState<UserAppAccess[]>([]);
   const [isLoadingApps, setIsLoadingApps] = React.useState(true);
+  const [showNameSetup, setShowNameSetup] = React.useState(false);
+
+  // Check if we should show name setup modal
+  React.useEffect(() => {
+    if (user && !user.name) {
+      // Check if user has skipped this session
+      const hasSkipped = sessionStorage.getItem('nameSetupSkipped') === 'true';
+      if (!hasSkipped) {
+        setShowNameSetup(true);
+      }
+    }
+  }, [user]);
 
   React.useEffect(() => {
     async function fetchApps() {
@@ -31,6 +44,16 @@ function HomePageContent({ appName }: HomePageProps) {
     }
   }, [user]);
 
+  const handleNameSetupComplete = () => {
+    setShowNameSetup(false);
+    refreshUser();
+  };
+
+  const handleNameSetupSkip = () => {
+    sessionStorage.setItem('nameSetupSkipped', 'true');
+    setShowNameSetup(false);
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -48,6 +71,13 @@ function HomePageContent({ appName }: HomePageProps) {
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
+      {showNameSetup && user && (
+        <NameSetupModal
+          user={user}
+          onComplete={handleNameSetupComplete}
+          onSkip={handleNameSetupSkip}
+        />
+      )}
       <TopBar appName={appName} />
 
       <main className="flex-1 container mx-auto px-6 py-8">
