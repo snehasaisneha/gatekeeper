@@ -39,6 +39,17 @@ class BanCheckMiddleware(BaseHTTPMiddleware):
             async with async_session_maker() as db:
                 security_service = SecurityService(db)
                 if await security_service.is_ip_banned(client_ip):
+                    # Log the blocked request
+                    from gatekeeper.models.audit import AuditLog
+
+                    audit = AuditLog(
+                        event_type="security.blocked.banned_ip",
+                        ip_address=client_ip,
+                        details={"path": request.url.path},
+                    )
+                    db.add(audit)
+                    await db.commit()
+
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "Access denied"},
