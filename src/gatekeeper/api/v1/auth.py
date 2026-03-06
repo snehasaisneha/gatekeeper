@@ -861,6 +861,19 @@ async def google_callback(
             await db.flush()
             await db.refresh(user)
 
+            # Notify admins who want to know about ALL new registrations
+            email_service = EmailService(db=db)
+            admin_stmt = select(User).where(
+                User.is_admin == True,  # noqa: E712
+                User.notify_all_registrations == True,  # noqa: E712
+            )
+            admin_result = await db.execute(admin_stmt)
+            admins = admin_result.scalars().all()
+            for admin in admins:
+                await email_service.send_new_user_notification(
+                    admin.email, email, is_auto_approved=(user.status == UserStatus.APPROVED)
+                )
+
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
             return create_redirect(f"{settings.frontend_url}/signin?error=account_rejected")
@@ -1093,6 +1106,19 @@ async def github_callback(
             db.add(user)
             await db.flush()
             await db.refresh(user)
+
+            # Notify admins who want to know about ALL new registrations
+            email_service = EmailService(db=db)
+            admin_stmt = select(User).where(
+                User.is_admin == True,  # noqa: E712
+                User.notify_all_registrations == True,  # noqa: E712
+            )
+            admin_result = await db.execute(admin_stmt)
+            admins = admin_result.scalars().all()
+            for admin in admins:
+                await email_service.send_new_user_notification(
+                    admin.email, email, is_auto_approved=True
+                )
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:

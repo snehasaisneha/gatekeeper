@@ -28,7 +28,7 @@ export function SignInForm() {
         'invalid_state': 'SESSION EXPIRED. RETRY.',
         'no_email': 'NO EMAIL FROM PROVIDER.',
         'internal_error': 'SYSTEM ERROR.',
-        'github_no_org_email': 'NO APPROVED EMAIL FOUND. LINK YOUR ORGANISATIONAL EMAIL TO GITHUB, OR SIGN IN WITH EMAIL/PASSKEY.',
+        'github_no_org_email': 'NO APPROVED EMAIL FOUND ON YOUR GITHUB ACCOUNT. ADD YOUR WORK EMAIL TO GITHUB AND TRY AGAIN, OR USE EMAIL/PASSKEY SIGN-IN.',
       };
       setError(errorMessages[errorParam] || 'ERROR OCCURRED.');
     }
