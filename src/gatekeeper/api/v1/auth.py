@@ -257,7 +257,7 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
 
     return MessageResponse(
         message="Verification code sent",
-        detail="Check your email for the 6-digit code.",
+        detail="Check your email for the 6-digit code. Check spam if not found.",
     )
 
 
