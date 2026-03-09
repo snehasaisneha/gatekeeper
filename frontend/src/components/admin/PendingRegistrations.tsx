@@ -12,6 +12,7 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
   const [users, setUsers] = React.useState<User[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
 
   const loadPending = React.useCallback(async () => {
@@ -37,31 +38,33 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
 
   const handleApprove = async (user: User) => {
     setActionLoading(user.id);
+    setActionError(null);
     try {
       await api.admin.approveUser(user.id);
       await loadPending();
       onAction?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to approve user';
+      setActionError(message);
+      console.error('Approve error:', err);
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleReject = async (user: User) => {
-    if (!confirm(`Are you sure you want to reject ${user.email}?`)) return;
+    if (!confirm(`Are you sure you want to reject ${user.email}? This will also ban their email.`)) return;
 
     setActionLoading(user.id);
+    setActionError(null);
     try {
       await api.admin.rejectUser(user.id);
       await loadPending();
       onAction?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to reject user';
+      setActionError(message);
+      console.error('Reject error:', err);
     } finally {
       setActionLoading(null);
     }
@@ -120,6 +123,11 @@ export function PendingRegistrations({ onAction }: PendingRegistrationsProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-4">
+        {actionError && (
+          <div className="mb-4 p-3 border-2 border-red-500 bg-red-50 text-red-600 text-sm font-bold">
+            {actionError}
+          </div>
+        )}
         {users.length === 0 ? (
           <p className="text-center text-gray-500 py-4 font-bold uppercase tracking-wider">
             All caught up!
