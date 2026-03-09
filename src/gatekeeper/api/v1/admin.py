@@ -480,7 +480,7 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
             AuditLog.event_type == "auth.signin.otp_success",
             AuditLog.actor_email == user.email,
         )
-        .order_by(AuditLog.created_at.asc())
+        .order_by(AuditLog.timestamp.asc())
         .limit(1)
     )
     registration_log_result = await db.execute(registration_log_stmt)
