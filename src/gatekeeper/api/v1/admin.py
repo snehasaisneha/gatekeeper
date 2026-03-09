@@ -535,11 +535,13 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
                 ip_ban_audit = AuditLog(
                     event_type="security.ip.banned.cross",
                     actor_email=admin.email,
-                    details={
-                        "ip_address": registration_ip,
-                        "reason": BanReason.REJECTED_USER.value,
-                        "associated_email": user.email,
-                    },
+                    details=json.dumps(
+                        {
+                            "ip_address": registration_ip,
+                            "reason": BanReason.REJECTED_USER.value,
+                            "associated_email": user.email,
+                        }
+                    ),
                 )
                 db.add(ip_ban_audit)
 
@@ -547,11 +549,13 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
     email_ban_audit = AuditLog(
         event_type="security.email.banned.rejected",
         actor_email=admin.email,
-        details={
-            "email": user.email,
-            "reason": BanReason.REJECTED_USER.value,
-            "associated_ip": registration_ip,
-        },
+        details=json.dumps(
+            {
+                "email": user.email,
+                "reason": BanReason.REJECTED_USER.value,
+                "associated_ip": registration_ip,
+            }
+        ),
     )
     db.add(email_ban_audit)
 

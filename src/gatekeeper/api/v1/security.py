@@ -1,5 +1,6 @@
 """Security API endpoints for IP and email banning."""
 
+import json
 import uuid
 from datetime import datetime
 
@@ -224,11 +225,13 @@ async def ban_ip(
     audit = AuditLog(
         event_type="security.ip.banned.manual",
         actor_email=admin.email,
-        details={
-            "ip_address": request.ip_address,
-            "reason": request.reason.value,
-            "associated_email": request.associated_email,
-        },
+        details=json.dumps(
+            {
+                "ip_address": request.ip_address,
+                "reason": request.reason.value,
+                "associated_email": request.associated_email,
+            }
+        ),
     )
     db.add(audit)
 
@@ -275,7 +278,7 @@ async def unban_ip(
     audit = AuditLog(
         event_type="security.ip.unbanned",
         actor_email=admin.email,
-        details={"ip_address": ban.ip_address, "original_reason": ban.reason},
+        details=json.dumps({"ip_address": ban.ip_address, "original_reason": ban.reason}),
     )
     db.add(audit)
 
@@ -404,12 +407,14 @@ async def ban_email(
     audit = AuditLog(
         event_type="security.email.banned.manual",
         actor_email=admin.email,
-        details={
-            "email": request.email,
-            "is_pattern": request.is_pattern,
-            "reason": request.reason.value,
-            "associated_ip": request.associated_ip,
-        },
+        details=json.dumps(
+            {
+                "email": request.email,
+                "is_pattern": request.is_pattern,
+                "reason": request.reason.value,
+                "associated_ip": request.associated_ip,
+            }
+        ),
     )
     db.add(audit)
 
@@ -457,7 +462,7 @@ async def unban_email(
     audit = AuditLog(
         event_type="security.email.unbanned",
         actor_email=admin.email,
-        details={"email": ban.email, "original_reason": ban.reason},
+        details=json.dumps({"email": ban.email, "original_reason": ban.reason}),
     )
     db.add(audit)
 
