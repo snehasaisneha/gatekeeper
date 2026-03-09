@@ -216,6 +216,38 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     }
   };
 
+  const handleApprove = async (user: User) => {
+    setActionLoading(user.id);
+    try {
+      await api.admin.approveUser(user.id);
+      await loadUsers();
+      onRefresh?.();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (user: User) => {
+    if (!confirm(`Are you sure you want to reject ${user.email}? This will also ban their email.`)) return;
+
+    setActionLoading(user.id);
+    try {
+      await api.admin.rejectUser(user.id);
+      await loadUsers();
+      onRefresh?.();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved':
@@ -351,6 +383,38 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                   </td>
                   <td className="p-3 text-sm text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      {user.status === 'pending' && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleApprove(user)}
+                            disabled={actionLoading === user.id}
+                            title="Approve User"
+                            className="text-green-600 hover:text-green-600"
+                          >
+                            {actionLoading === user.id ? (
+                              <div className="w-4 h-4 border-2 border-green-600 border-t-transparent animate-spin" />
+                            ) : (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleReject(user)}
+                            disabled={actionLoading === user.id}
+                            title="Reject User"
+                            className="text-red-600 hover:text-red-600"
+                          >
+                            {actionLoading === user.id ? (
+                              <div className="w-4 h-4 border-2 border-red-600 border-t-transparent animate-spin" />
+                            ) : (
+                              <X className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -372,6 +436,7 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                         onClick={() => handleDelete(user)}
                         disabled={actionLoading === user.id}
                         className="text-red-600 hover:text-red-600"
+                        title="Delete User"
                       >
                         {actionLoading === user.id ? (
                           <div className="w-4 h-4 border-2 border-red-600 border-t-transparent animate-spin" />
