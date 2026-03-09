@@ -35,6 +35,7 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
   const [users, setUsers] = React.useState<User[]>(initialUsers || []);
   const [isLoading, setIsLoading] = React.useState(!initialUsers);
   const [error, setError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
 
   // Search and filter
@@ -127,6 +128,7 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
 
   const handleToggleAdmin = async (user: User) => {
     setActionLoading(user.id);
+    setActionError(null);
     try {
       await api.admin.updateUser(user.id, { is_admin: !user.is_admin });
       await loadUsers();
@@ -135,9 +137,9 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
       }
       onRefresh?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to update user';
+      setActionError(message);
+      console.error('Toggle admin error:', err);
     } finally {
       setActionLoading(null);
     }
@@ -147,6 +149,7 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     if (!confirm(`Are you sure you want to delete ${user.email}?`)) return;
 
     setActionLoading(user.id);
+    setActionError(null);
     try {
       await api.admin.deleteUser(user.id);
       if (expandedUserId === user.id) {
@@ -156,9 +159,9 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
       await loadUsers();
       onRefresh?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to delete user';
+      setActionError(message);
+      console.error('Delete error:', err);
     } finally {
       setActionLoading(null);
     }
@@ -167,13 +170,14 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
   const handleUpdateNotifications = async (field: 'notify_new_registrations' | 'notify_all_registrations', value: boolean) => {
     if (!userDetail) return;
     setIsSavingSettings(true);
+    setActionError(null);
     try {
       await api.admin.updateUser(userDetail.id, { [field]: value });
       await loadUserDetail(userDetail.id);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to update notifications';
+      setActionError(message);
+      console.error('Update notifications error:', err);
     } finally {
       setIsSavingSettings(false);
     }
@@ -183,6 +187,7 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     if (!userDetail || !selectedAppToGrant) return;
 
     setIsGranting(true);
+    setActionError(null);
     try {
       await api.admin.grantAccess(selectedAppToGrant, userDetail.email, selectedRole || undefined);
       setSelectedAppToGrant('');
@@ -190,9 +195,9 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
       await loadUserDetail(userDetail.id);
       onRefresh?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to grant access';
+      setActionError(message);
+      console.error('Grant access error:', err);
     } finally {
       setIsGranting(false);
     }
@@ -203,14 +208,15 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     if (!confirm(`Revoke access to ${appSlug}?`)) return;
 
     setActionLoading(`revoke-${appSlug}`);
+    setActionError(null);
     try {
       await api.admin.revokeAccess(appSlug, userDetail.email);
       await loadUserDetail(userDetail.id);
       onRefresh?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to revoke access';
+      setActionError(message);
+      console.error('Revoke access error:', err);
     } finally {
       setActionLoading(null);
     }
@@ -218,14 +224,15 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
 
   const handleApprove = async (user: User) => {
     setActionLoading(user.id);
+    setActionError(null);
     try {
       await api.admin.approveUser(user.id);
       await loadUsers();
       onRefresh?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to approve user';
+      setActionError(message);
+      console.error('Approve error:', err);
     } finally {
       setActionLoading(null);
     }
@@ -235,14 +242,15 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     if (!confirm(`Are you sure you want to reject ${user.email}? This will also ban their email.`)) return;
 
     setActionLoading(user.id);
+    setActionError(null);
     try {
       await api.admin.rejectUser(user.id);
       await loadUsers();
       onRefresh?.();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      }
+      const message = err instanceof ApiError ? err.message : 'Failed to reject user';
+      setActionError(message);
+      console.error('Reject error:', err);
     } finally {
       setActionLoading(null);
     }
@@ -329,6 +337,13 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
           slim
         />
       </div>
+
+      {/* Action Error */}
+      {actionError && (
+        <Alert variant="destructive">
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Users Table */}
       <div className="border-4 border-black">
