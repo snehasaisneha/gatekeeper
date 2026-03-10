@@ -12,6 +12,7 @@ These guides cover the operational parts of running Gatekeeper.
 ## Operations
 
 - [Deployment](deployment.md): production topology, nginx, systemd, and noindex guidance
+- [Rollout checklist](rollouts.md): step-by-step production rollout and verification sequence
 - [Email setup](email.md): SMTP and SES configuration
 - [Audit logs](audit-logs.md): auth/admin/security event visibility
 
@@ -24,5 +25,6 @@ google-sso
 github-sso
 email
 deployment
+rollouts
 audit-logs
 ```

@@ -27,6 +27,7 @@ Gatekeeper works best when:
 - internal apps live on sibling subdomains such as `docs.example.com` or `grafana.example.com`
 - `COOKIE_DOMAIN=.example.com` is set for cross-subdomain SSO
 - auth and internal app domains send `X-Robots-Tag: noindex, nofollow, noarchive`
+- production deploys use `PUBLIC_API_DOCS=false` and a tight `TRUSTED_PROXY_IPS` list
 
 ## Start here
 

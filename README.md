@@ -1,6 +1,6 @@
 # Gatekeeper
 
-Lightweight, self-hosted auth gateway for internal tools. Email OTP + Passkeys. Multi-app SSO. Protect any app behind nginx. No vendor lock-in, no per-user pricing, full data control.
+Self-hosted auth gateway for internal tools. Email OTP, passkeys, Google, GitHub, multi-app SSO, and an admin/security surface for approvals, app access, bans, and audit review.
 
 © 2025 Sai Sneha · [AGPL-3.0-or-later](LICENSE)
 
@@ -15,7 +15,7 @@ You have internal tools — docs, dashboards, Jupyter notebooks, admin panels. Y
 - **Cloudflare Access** = traffic through their network, vendor lock-in
 - **Basic auth** = unhashed passwords, no audit trail, security theater
 
-Gatekeeper: single SQLite file, ~50MB RAM, deploys in 15 minutes. Sits in front of nginx, protects anything behind it.
+Gatekeeper sits behind an auth hostname such as `auth.example.com` and protects sibling subdomains through nginx `auth_request`.
 
 ## Features
 
@@ -24,6 +24,7 @@ Gatekeeper: single SQLite file, ~50MB RAM, deploys in 15 minutes. Sits in front 
 - **Multi-app SSO** — One login for all your internal tools (`*.company.com`)
 - **Role-based access** — Control who accesses what, with optional role hints
 - **Admin panel** — Approve users, manage domains and apps
+- **Security controls** — IP and email bans, audit logs, rate limits, public-docs disablement
 - **CLI tools** — `gk users`, `gk apps`, `gk domains`, `gk ops` for headless management
 - **SQLite or PostgreSQL** — Zero-config default, scales when needed
 - **SES or SMTP** — Bring your own email provider
@@ -33,18 +34,21 @@ Gatekeeper: single SQLite file, ~50MB RAM, deploys in 15 minutes. Sits in front 
 ```bash
 # Clone and configure
 git clone <repo> && cd gatekeeper
-cp .env.example .env  # Edit with your settings
-
-# Install and run
 uv sync
+cp .env.example .env
+
+# Initialize
 uv run all-migrations
 uv run gk users add --email admin@example.com --admin --seeded
-uv run gatekeeper
+
+# Run locally
+npm -C frontend run build
+uv run gk ops serve --host 127.0.0.1 --port 8000
 ```
 
 Frontend dev mode: `cd frontend && npm install && npm run dev`
 
-**That's it.** In the simple setup, Gatekeeper runs on `:8000`. In frontend dev mode, Astro runs separately on `:4321`.
+In production, keep `PUBLIC_API_DOCS=false`, set `TRUSTED_PROXY_IPS` to only your proxy tiers, and put `X-Robots-Tag: noindex, nofollow, noarchive` on the public auth and internal app hostnames.
 
 ## Protecting Apps
 
@@ -64,7 +68,7 @@ Frontend dev mode: `cd frontend && npm install && npm run dev`
    }
    ```
 
-See [`deployment/`](deployment/) for complete nginx configs.
+See [`deployment/`](deployment/), [`deployment/README.md`](deployment/README.md), and the Sphinx guides under [`docs/source/guides`](docs/source/guides) for the current nginx and rollout flow.
 
 ## CLI
 
@@ -96,9 +100,11 @@ Key environment variables (see `.env.example` for all):
 | --------------------- | --------------------------------------------------- |
 | `SECRET_KEY`          | Signing key (min 32 chars)                          |
 | `DATABASE_URL`        | `sqlite+aiosqlite:///./gatekeeper.db` or PostgreSQL |
-| `ACCEPTED_DOMAINS`    | Auto-approve emails from these domains              |
+| `ACCEPTED_DOMAINS`    | Seed approved internal domains on startup           |
 | `EMAIL_PROVIDER`      | `ses` or `smtp`                                     |
 | `COOKIE_DOMAIN`       | `.example.com` for multi-app SSO                    |
+| `PUBLIC_API_DOCS`     | Leave `false` in production                         |
+| `TRUSTED_PROXY_IPS`   | Proxy IPs/CIDRs allowed to set forwarded IP headers |
 | `GOOGLE_CLIENT_ID`    | Google OAuth client ID (optional)                   |
 | `GOOGLE_CLIENT_SECRET`| Google OAuth client secret (optional)               |
 | `GITHUB_CLIENT_ID`    | GitHub OAuth client ID (optional)                   |
@@ -121,7 +127,7 @@ sudo cp deployment/nginx/gatekeeper-server.conf /etc/nginx/sites-available/gatek
 sudo certbot --nginx -d auth.example.com
 ```
 
-See [`deployment/README.md`](deployment/README.md) for full guide.
+See [`deployment/README.md`](deployment/README.md) for the full deployment guide and [`docs/source/guides/rollouts.md`](docs/source/guides/rollouts.md) for the rollout checklist.
 
 ## Who This Is For
 
