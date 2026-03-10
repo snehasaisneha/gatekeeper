@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -148,11 +148,7 @@ dmypy.json
 !example.env
 
 node_modules/
-staticauth.db
+frontend/.astro/
+data/gatekeeper.db
 
 # Local notes/docs
-backlog.md
-learnings.md
-prompt.md
-roadmap.md
-comparison.md
