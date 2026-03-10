@@ -2,6 +2,8 @@
 Tests for multi-app functionality.
 """
 
+from unittest.mock import patch
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -293,6 +295,34 @@ class TestAdminAppEndpoints:
         data = create_response.json()
         assert data["slug"] == "test-app"
         assert data["name"] == "Test App"
+
+    async def test_create_app_rejects_reserved_auth_slug(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        """Test that admins cannot create an app using the auth host slug."""
+        admin = await create_test_user(
+            db_session, "reserved-admin@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        with patch("gatekeeper.api.v1.admin.get_settings") as mock_get_settings:
+            mock_get_settings.return_value.app_url = "https://auth.example.com"
+            create_response = await client.post(
+                "/api/v1/admin/apps",
+                json={"slug": "auth", "name": "Auth Collision"},
+                cookies=cookies,
+            )
+
+        assert create_response.status_code == 400
+        assert "reserved for the auth host" in create_response.json()["detail"].lower()
 
     async def test_grant_and_revoke_access(self, client: AsyncClient, db_session: AsyncSession):
         """Test granting and revoking app access."""

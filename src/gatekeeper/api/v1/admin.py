@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import datetime
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -50,6 +51,19 @@ async def _get_approved_domains_set(db: AsyncSession) -> set[str]:
     stmt = select(ApprovedDomain.domain)
     result = await db.execute(stmt)
     return set(result.scalars().all())
+
+
+def _get_reserved_app_slugs() -> set[str]:
+    reserved_slugs: set[str] = set()
+    app_hostname = urlparse(get_settings().app_url).hostname
+    if not app_hostname:
+        return reserved_slugs
+
+    first_label = app_hostname.split(".")[0].strip().lower()
+    if first_label:
+        reserved_slugs.add(first_label)
+
+    return reserved_slugs
 
 
 def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
@@ -669,6 +683,12 @@ async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
     description="Register a new app. Admin only.",
 )
 async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> AppRead:
+    if request.slug in _get_reserved_app_slugs():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"App slug '{request.slug}' is reserved for the auth host",
+        )
+
     stmt = select(App).where(App.slug == request.slug)
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()

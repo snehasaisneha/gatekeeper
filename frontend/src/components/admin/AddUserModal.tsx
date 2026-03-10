@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { api, ApiError } from '@/lib/api';
-import type { App } from '@/lib/api';
+import type { App, Domain } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -16,23 +16,44 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
   const [isAdmin, setIsAdmin] = React.useState(false);
   const [selectedApps, setSelectedApps] = React.useState<Set<string>>(new Set());
   const [apps, setApps] = React.useState<App[]>([]);
+  const [domains, setDomains] = React.useState<Domain[]>([]);
   const [isLoadingApps, setIsLoadingApps] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    async function fetchApps() {
+    async function fetchFormData() {
       try {
-        const response = await api.admin.listApps();
-        setApps(response.apps);
+        const [appsResponse, domainsResponse] = await Promise.all([
+          api.admin.listApps(),
+          api.admin.listDomains(),
+        ]);
+        setApps(appsResponse.apps);
+        setDomains(domainsResponse.domains);
       } catch {
-        // Silently fail - app selection just won't be available
+        // Silently fail - enhanced hints just won't be available
       } finally {
         setIsLoadingApps(false);
       }
     }
-    fetchApps();
+    fetchFormData();
   }, []);
+
+  const emailDomain = React.useMemo(() => {
+    const [, domain = ''] = email.trim().toLowerCase().split('@');
+    return domain;
+  }, [email]);
+
+  const isInternalDomain = React.useMemo(
+    () => domains.some((domain) => domain.domain === emailDomain),
+    [domains, emailDomain],
+  );
+
+  React.useEffect(() => {
+    if (isInternalDomain || isAdmin) {
+      setSelectedApps(new Set());
+    }
+  }, [isAdmin, isInternalDomain]);
 
   const toggleApp = (slug: string) => {
     setSelectedApps((prev) => {
@@ -55,8 +76,8 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
       // Create the user
       const user = await api.admin.createUser(email, isAdmin, true);
 
-      // Grant access to selected apps (if any) - skip for super admins
-      if (!isAdmin && selectedApps.size > 0) {
+      // Internal users and super admins do not need explicit app grants.
+      if (!isAdmin && !isInternalDomain && selectedApps.size > 0) {
         await api.admin.bulkGrantAccess({
           emails: [user.email],
           app_slugs: Array.from(selectedApps),
@@ -116,6 +137,11 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
                 disabled={isSubmitting}
                 slim
               />
+              {emailDomain && isInternalDomain && (
+                <p className="text-xs text-green-700">
+                  This domain is approved as internal. The user will automatically have access to all apps.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-3 p-3 border-2 border-black">
@@ -140,17 +166,27 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
             {!isAdmin && (
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider">
-                  Grant Access to Apps (optional)
+                  Grant Access to Apps {isInternalDomain ? '(not needed)' : '(optional)'}
                 </label>
-                <p className="text-xs text-gray-500">
-                  User will receive an email notification for each app.
-                </p>
+                {isInternalDomain ? (
+                  <p className="text-xs text-gray-500">
+                    Internal users inherit access to every app from the approved domains list.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    User will receive an email notification for each app.
+                  </p>
+                )}
                 {isLoadingApps ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="inline-block w-5 h-5 border-4 border-black border-t-transparent animate-spin" />
                   </div>
                 ) : apps.length === 0 ? (
                   <p className="text-sm text-gray-500 py-2 text-center">No apps available.</p>
+                ) : isInternalDomain ? (
+                  <div className="border-2 border-black bg-gray-50 p-4 text-sm text-gray-600">
+                    This user will be added as an internal user and will see all apps automatically.
+                  </div>
                 ) : (
                   <div className="border-2 border-black max-h-48 overflow-y-auto">
                     {apps.map((app) => (

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { api, ApiError, type DeploymentConfig } from '@/lib/api';
+import type { App } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -25,6 +26,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   // Deployment config
   const [config, setConfig] = React.useState<DeploymentConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = React.useState(true);
+  const [existingApps, setExistingApps] = React.useState<App[]>([]);
 
   // Copy state
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
@@ -36,8 +38,12 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   React.useEffect(() => {
     async function fetchConfig() {
       try {
-        const deployConfig = await api.admin.getDeploymentConfig();
+        const [deployConfig, appsResponse] = await Promise.all([
+          api.admin.getDeploymentConfig(),
+          api.admin.listApps(),
+        ]);
         setConfig(deployConfig);
+        setExistingApps(appsResponse.apps);
       } catch {
         // Silently fail - instructions will show placeholder
       } finally {
@@ -64,9 +70,23 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
   const getGatekeeperUrl = () => config?.app_url || 'https://auth.example.com';
   const getGatekeeperHost = () => getGatekeeperUrl().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const getReservedAuthSlug = () => {
+    const host = getGatekeeperHost().toLowerCase();
+    const [firstLabel] = host.split('.');
+    return firstLabel || '';
+  };
+  const normalizedSlug = slug.trim().toLowerCase();
+  const reservedAuthSlug = getReservedAuthSlug();
+  const slugExists = existingApps.some((app) => app.slug === normalizedSlug);
+  const slugReservedForAuth = normalizedSlug.length > 0 && normalizedSlug === reservedAuthSlug;
+  const slugError = slugReservedForAuth
+    ? `The slug "${normalizedSlug}" is reserved for the auth host.`
+    : slugExists
+      ? `An app with the slug "${normalizedSlug}" already exists.`
+      : null;
 
   const handleSubmit = async () => {
-    if (!slug || !name) return;
+    if (!slug || !name || slugError) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -91,7 +111,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   };
 
   const handleNext = () => {
-    if (!slug || !name) return;
+    if (!slug || !name || slugError) return;
     setStep(2);
   };
 
@@ -212,7 +232,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     </div>
   );
 
-  const canProceed = slug.length > 0 && name.length > 0;
+  const canProceed = slug.length > 0 && name.length > 0 && !slugError;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -286,6 +306,9 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                 <p className="text-xs text-gray-500">
                   Lowercase, alphanumeric and hyphens only
                 </p>
+                {slugError && (
+                  <p className="text-xs text-red-600">{slugError}</p>
+                )}
 
                 {/* URL Preview */}
                 {!isLoadingConfig && (
