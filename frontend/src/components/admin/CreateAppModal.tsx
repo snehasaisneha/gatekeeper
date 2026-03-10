@@ -126,6 +126,9 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     listen 80;
     server_name ${domain};
     add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+    add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
+    add_header Pragma "no-cache" always;
+    add_header Expires "0" always;
 
     # Gatekeeper auth validation endpoint
     location = /_gk/validate {
@@ -135,15 +138,19 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
         proxy_set_header Content-Length "";
         proxy_set_header X-Original-URI $request_uri;
         proxy_set_header X-GK-App ${slug || 'myapp'};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Cookie $http_cookie;
     }
 
-    # Logout: redirect to Gatekeeper signout with return URL
+    # Logout: clear Gatekeeper session, then land on signin for a clean post-logout state
     location = /logout {
-        return 302 https://${gkHost}/signout?redirect=https://$host/;
+        return 302 https://${gkHost}/signout?redirect=https://${gkHost}/signin?redirect=https://$host/;
     }
     location = /signout {
-        return 302 https://${gkHost}/signout?redirect=https://$host/;
+        return 302 https://${gkHost}/signout?redirect=https://${gkHost}/signin?redirect=https://$host/;
     }
 
     # All requests: validate auth, then proxy to your app
@@ -173,14 +180,6 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
 }`;
   };
-
-  const getAuthNoIndexSnippet = () => `server {
-    listen 80;
-    server_name ${getGatekeeperHost()};
-    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
-
-    # ... rest of your auth.${getBaseDomain()} config
-}`;
 
   const CodeBlock = ({
     code,
@@ -375,17 +374,6 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                       </code>{' '}
                       to your server's IP address in DNS.
                     </p>
-                  </div>
-
-                  <div className="bg-yellow-100 border-2 border-yellow-500 p-3 space-y-2">
-                    <p className="text-sm">
-                      <strong>Auth host noindex:</strong> Your Gatekeeper auth domain should send
-                      <code className="bg-yellow-200 px-1 font-mono text-xs mx-1">
-                        X-Robots-Tag: noindex
-                      </code>
-                      so it does not get indexed.
-                    </p>
-                    <CodeBlock code={getAuthNoIndexSnippet()} id="auth-noindex" />
                   </div>
 
                   {/* App-specific config inputs */}

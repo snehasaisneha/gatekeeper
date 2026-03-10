@@ -108,7 +108,8 @@ add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 ```
 
 This should stay on your public auth host so search engines do not index your login pages.
-The protected-app template now includes the same header for internal app domains.
+The protected-app template now includes the same header for internal app domains, plus
+`Cache-Control: no-store` so cached static apps do not appear to stay logged in after signout.
 
 ### 3. Register Apps
 
@@ -191,3 +192,8 @@ sudo journalctl -u gatekeeper -f --no-pager -n 50
 - Leave `X-Robots-Tag: noindex, nofollow, noarchive` on protected app nginx server blocks too
 - If you control the app HTML, add `<meta name="robots" content="noindex, nofollow, noarchive">`
 - Verify with `curl -I https://app.example.com`
+
+### Logout looks stale on static docs or other cached apps
+- Keep the protected app `Cache-Control: no-store` headers in nginx
+- Route `/logout` and `/signout` through the Gatekeeper signin page after signout
+- Use a normal browser navigation for logout, not a background fetch

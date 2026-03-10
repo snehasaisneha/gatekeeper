@@ -103,6 +103,7 @@ For internal apps, the protected-app template also includes:
 
 ```nginx
 add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
 ```
 
 If you control the app HTML too, add a page-level robots meta tag as defense in depth:
@@ -110,6 +111,9 @@ If you control the app HTML too, add a page-level robots meta tag as defense in 
 ```html
 <meta name="robots" content="noindex, nofollow, noarchive">
 ```
+
+The protected-app template also routes `/logout` and `/signout` back through Gatekeeper signin
+after clearing the session. That gives cached static apps a clean post-logout landing state.
 
 ### 4. Register App in Gatekeeper
 
@@ -144,6 +148,11 @@ Or via admin UI at `https://auth.example.com/admin`
 ### After login, doesn't redirect back to app
 - Check that `@login` location uses `?redirect=$scheme://$host$request_uri`
 - Rebuild frontend if this was recently fixed
+
+### Logout looks stale until the next click or reload
+- Keep the protected app `Cache-Control: no-store` headers
+- Route `/logout` and `/signout` through `https://auth.example.com/signin?...` after signout
+- For static sites, use a normal browser navigation for logout rather than a background fetch
 
 ## Cookie Domain
 

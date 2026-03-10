@@ -49,6 +49,9 @@ location = /_gatekeeper/validate {
     proxy_set_header X-Original-URI $request_uri;
     proxy_set_header X-GK-App "myapp";  # Your app slug
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Cookie $http_cookie;
 }
 
@@ -57,6 +60,9 @@ server {
     listen 443 ssl;
     server_name myapp.example.com;
     add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+    add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
+    add_header Pragma "no-cache" always;
+    add_header Expires "0" always;
 
     # SSL configuration...
 
@@ -84,6 +90,14 @@ server {
     location @denied {
         return 302 https://auth.example.com/request-access?app=myapp;
     }
+
+    location = /logout {
+        return 302 https://auth.example.com/signout?redirect=https://auth.example.com/signin?redirect=https://$host/;
+    }
+
+    location = /signout {
+        return 302 https://auth.example.com/signout?redirect=https://auth.example.com/signin?redirect=https://$host/;
+    }
 }
 ```
 
@@ -92,6 +106,10 @@ For internal apps, keep that `X-Robots-Tag` header on the app domain too. If you
 ```html
 <meta name="robots" content="noindex, nofollow, noarchive">
 ```
+
+For static docs or other cached internal apps, those `Cache-Control: no-store` headers and the
+logout redirects above avoid a stale page appearing to stay logged in until the next manual
+navigation.
 
 ## Step 4: Reload nginx
 

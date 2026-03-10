@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserList } from './UserList';
 import { PendingRegistrations } from './PendingRegistrations';
 import { AppManagement } from './AppManagement';
@@ -24,6 +25,9 @@ export function AdminDashboard() {
   const [totalApps, setTotalApps] = React.useState(0);
   const [totalDomains, setTotalDomains] = React.useState(0);
   const [blockedToday, setBlockedToday] = React.useState(0);
+  const [authIndexingProtection, setAuthIndexingProtection] = React.useState<
+    'checking' | 'ok' | 'warning'
+  >('checking');
 
   React.useEffect(() => {
     async function fetchStats() {
@@ -56,6 +60,35 @@ export function AdminDashboard() {
     fetchStats();
   }, [refreshKey]);
 
+  React.useEffect(() => {
+    async function checkAuthIndexingProtection() {
+      try {
+        const [rootResponse, robotsResponse] = await Promise.all([
+          fetch('/', {
+            method: 'HEAD',
+            credentials: 'include',
+            cache: 'no-store',
+          }),
+          fetch('/robots.txt', {
+            credentials: 'include',
+            cache: 'no-store',
+          }),
+        ]);
+
+        const xRobotsTag = rootResponse.headers.get('x-robots-tag')?.toLowerCase() || '';
+        const robotsText = robotsResponse.ok ? (await robotsResponse.text()).toLowerCase() : '';
+        const hasNoIndexHeader = xRobotsTag.includes('noindex');
+        const blocksCrawlers = robotsText.includes('disallow: /');
+
+        setAuthIndexingProtection(hasNoIndexHeader && blocksCrawlers ? 'ok' : 'warning');
+      } catch {
+        setAuthIndexingProtection('warning');
+      }
+    }
+
+    checkAuthIndexingProtection();
+  }, []);
+
   const handleRefresh = () => {
     setRefreshKey((k) => k + 1);
   };
@@ -82,6 +115,20 @@ export function AdminDashboard() {
           Admin Guide <ExternalLink className="h-3 w-3" />
         </a>
       </div>
+
+      {authIndexingProtection === 'warning' && (
+        <Alert className="border-2 border-yellow-500 bg-yellow-50">
+          <AlertDescription className="text-sm">
+            <strong>Auth host indexing protection is incomplete.</strong> Add
+            <code className="mx-1 bg-yellow-200 px-1 font-mono text-xs">
+              X-Robots-Tag: noindex, nofollow, noarchive
+            </code>
+            to the public auth nginx server block and make sure
+            <code className="mx-1 bg-yellow-200 px-1 font-mono text-xs">/robots.txt</code>
+            disallows crawlers.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Stats Overview */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
