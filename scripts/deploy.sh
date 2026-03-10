@@ -53,6 +53,13 @@ chown -R ubuntu:www-data "$PROJECT_DIR/frontend/dist"
 chmod -R 750 "$PROJECT_DIR/frontend/dist"
 find "$PROJECT_DIR/frontend/dist" -type f -exec chmod 640 {} \;
 
+echo_step "Checking nginx noindex protection for auth host..."
+if grep -Rqs 'X-Robots-Tag "noindex, nofollow, noarchive"' /etc/nginx/sites-available; then
+    echo -e "${GREEN}Auth noindex header found in nginx config.${NC}"
+else
+    echo_warning "No auth nginx config appears to send X-Robots-Tag: noindex. Update your Gatekeeper/auth server block to avoid search indexing."
+fi
+
 echo_step "Verifying gatekeeper service status..."
 if systemctl is-active --quiet gatekeeper; then
     echo -e "${GREEN}Gatekeeper service is running.${NC}"

@@ -63,9 +63,13 @@ DATABASE_URL=sqlite+aiosqlite:////opt/gatekeeper/gatekeeper.db
 APP_URL=https://auth.example.com
 FRONTEND_URL=https://auth.example.com
 COOKIE_DOMAIN=.example.com
+PUBLIC_API_DOCS=false
+TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8
 EMAIL_PROVIDER=ses
 # ... other settings
 ```
+
+`TRUSTED_PROXY_IPS` must include only the nginx or routing tiers that are allowed to set `X-Forwarded-For` / `X-Real-IP`. Do not put broad public ranges there.
 
 ### 4. Initialize database
 
@@ -155,6 +159,7 @@ server {
     # SSL (add your certificates)
     ssl_certificate /etc/letsencrypt/live/auth.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/auth.example.com/privkey.pem;
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
     # Frontend static files
     location / {
@@ -193,6 +198,7 @@ location = /_gatekeeper/validate {
 server {
     listen 443 ssl http2;
     server_name myapp.example.com;
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
     ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
@@ -213,9 +219,15 @@ server {
     }
 
     location @denied {
-        return 302 https://auth.example.com/access-denied;
+        return 302 https://auth.example.com/request-access?app=myapp;
     }
 }
+```
+
+For internal apps, leave that `X-Robots-Tag` header on the protected app domain too. If you control the app HTML, add:
+
+```html
+<meta name="robots" content="noindex, nofollow, noarchive">
 ```
 
 Enable and reload:
@@ -237,6 +249,23 @@ sudo certbot --nginx -d myapp.example.com
 ```
 
 Certbot automatically renews certificates.
+
+## Existing deployments
+
+If your auth domain is already live, make sure the `auth.example.com` nginx `server` block sends:
+
+```nginx
+add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+```
+
+Then redeploy the frontend so `/robots.txt` is published, reload nginx, and verify:
+
+```bash
+curl -I https://auth.example.com
+curl https://auth.example.com/robots.txt
+```
+
+The response should include `X-Robots-Tag: noindex, nofollow, noarchive`, and `robots.txt` should disallow all crawlers.
 
 ## Health checks
 

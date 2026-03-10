@@ -56,6 +56,7 @@ location = /_gatekeeper/validate {
 server {
     listen 443 ssl;
     server_name myapp.example.com;
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
     # SSL configuration...
 
@@ -81,9 +82,15 @@ server {
     }
 
     location @denied {
-        return 302 https://auth.example.com/access-denied;
+        return 302 https://auth.example.com/request-access?app=myapp;
     }
 }
+```
+
+For internal apps, keep that `X-Robots-Tag` header on the app domain too. If you also control the app HTML, add:
+
+```html
+<meta name="robots" content="noindex, nofollow, noarchive">
 ```
 
 ## Step 4: Reload nginx
@@ -101,6 +108,7 @@ sudo systemctl reload nginx
 2. You should be redirected to the Gatekeeper sign-in page
 3. Sign in with your email
 4. After signing in, you're redirected back to your app
+5. If the user is signed in but lacks access, nginx can send them to a request-access or support flow
 
 ## Using the authenticated user
 

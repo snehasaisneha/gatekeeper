@@ -1,10 +1,14 @@
 """Security service for IP and email ban checking."""
 
+from collections.abc import Mapping
 from datetime import datetime
+from ipaddress import ip_address, ip_network
 
+from fastapi import Request
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gatekeeper.config import get_settings
 from gatekeeper.models.security import BannedEmail, BannedIP
 
 
@@ -59,21 +63,69 @@ class SecurityService:
 
         return any(pattern.matches(email_lower) for pattern in patterns)
 
+def _normalize_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    return {key.lower(): value for key, value in headers.items()}
 
-def get_client_ip(request_headers: dict, default: str = "unknown") -> str:
-    """Extract client IP from request headers.
 
-    Checks X-Forwarded-For and X-Real-IP headers for proxied requests.
-    """
-    # Check X-Forwarded-For header (comma-separated list, first is client)
-    forwarded_for = request_headers.get("x-forwarded-for")
-    if forwarded_for:
-        # Take the first IP in the chain
-        return forwarded_for.split(",")[0].strip()
+def _parse_forwarded_ip(value: str | None) -> str | None:
+    if not value:
+        return None
 
-    # Check X-Real-IP header
-    real_ip = request_headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+    candidate = value.split(",")[0].strip()
+    if not candidate:
+        return None
 
-    return default
+    try:
+        return str(ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def is_trusted_proxy(peer_ip: str | None) -> bool:
+    if not peer_ip:
+        return False
+
+    try:
+        parsed_peer_ip = ip_address(peer_ip)
+    except ValueError:
+        return False
+
+    settings = get_settings()
+    for trusted_proxy in settings.trusted_proxy_ips_list:
+        try:
+            if "/" in trusted_proxy:
+                if parsed_peer_ip in ip_network(trusted_proxy, strict=False):
+                    return True
+            elif parsed_peer_ip == ip_address(trusted_proxy):
+                return True
+        except ValueError:
+            continue
+
+    return False
+
+
+def get_client_ip_from_headers(
+    request_headers: Mapping[str, str],
+    *,
+    peer_ip: str | None = None,
+    default: str | None = None,
+) -> str | None:
+    """Extract client IP, trusting forwarded headers only from configured proxies."""
+    normalized_headers = _normalize_headers(request_headers)
+
+    if is_trusted_proxy(peer_ip):
+        forwarded_ip = _parse_forwarded_ip(normalized_headers.get("x-forwarded-for"))
+        if forwarded_ip:
+            return forwarded_ip
+
+        real_ip = _parse_forwarded_ip(normalized_headers.get("x-real-ip"))
+        if real_ip:
+            return real_ip
+
+    return peer_ip or default
+
+
+def get_client_ip(request: Request) -> str | None:
+    """Extract client IP from a FastAPI request."""
+    peer_ip = request.client.host if request.client else None
+    return get_client_ip_from_headers(request.headers, peer_ip=peer_ip)

@@ -71,6 +71,42 @@ def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
     )
 
 
+async def _find_registration_ip(db: AsyncSession, email: str) -> str | None:
+    """Find the earliest known registration IP for a user."""
+    event_groups = (
+        (
+            "auth.identity.pending_approval",
+            "auth.registration.pending_verified",
+            "auth.signin.otp_success",
+            "auth.signin.passkey",
+            "auth.signin.google",
+            "auth.signin.github",
+        ),
+        (
+            "auth.signin.otp_sent",
+            "auth.signin.failed",
+        ),
+    )
+
+    for event_types in event_groups:
+        stmt = (
+            select(AuditLog)
+            .where(
+                AuditLog.actor_email == email,
+                AuditLog.ip_address.is_not(None),
+                AuditLog.event_type.in_(event_types),
+            )
+            .order_by(AuditLog.timestamp.asc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        audit_log = result.scalar_one_or_none()
+        if audit_log:
+            return audit_log.ip_address
+
+    return None
+
+
 # ============================================================================
 # Domain Management Endpoints
 # ============================================================================
@@ -472,23 +508,8 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
     )
     db.add(email_ban)
 
-    # Cross-ban: Find the IP used during registration and ban it
-    # Look for the first successful OTP verification for this user
-    registration_log_stmt = (
-        select(AuditLog)
-        .where(
-            AuditLog.event_type == "auth.signin.otp_success",
-            AuditLog.actor_email == user.email,
-        )
-        .order_by(AuditLog.timestamp.asc())
-        .limit(1)
-    )
-    registration_log_result = await db.execute(registration_log_stmt)
-    registration_log = registration_log_result.scalar_one_or_none()
-
-    registration_ip = None
-    if registration_log and registration_log.details:
-        registration_ip = registration_log.details.get("ip_address")
+    # Cross-ban: Find the IP used during registration and ban it.
+    registration_ip = await _find_registration_ip(db, user.email)
 
     if registration_ip:
         # Check if the IP has been used by any approved domain user (don't ban)
@@ -500,7 +521,7 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
             ip_logs_stmt = (
                 select(AuditLog)
                 .where(
-                    AuditLog.details.contains({"ip_address": registration_ip}),
+                    AuditLog.ip_address == registration_ip,
                 )
                 .limit(50)
             )

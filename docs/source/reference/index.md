@@ -1,27 +1,20 @@
 # Reference
 
-:::{admonition} Work in Progress
-:class: warning
+This section documents the current operational surface of Gatekeeper.
 
-This section is under construction. Check back soon for complete reference documentation.
-:::
+## What is covered
 
-## Coming soon
+- [CLI reference](cli.md): `gk` commands used for day-to-day administration
+- [Environment variables](environment.md): runtime configuration and defaults
+- [API reference](api.md): key API groups and where to find the live OpenAPI docs
 
-- **CLI Reference** — Complete list of `gk` commands and options
-- **Environment Variables** — All configuration options with defaults
-- **API Reference** — REST API endpoints and schemas
-- **nginx Directives** — Configuration reference for auth_request setup
+## Live references
 
-## Quick links
+When Gatekeeper is running:
 
-For now, you can find reference information in:
-
-- [Configuration](../getting-started/configuration.md) — Environment variables
-- `gk --help` — CLI help for all commands
-- `gk users --help` — User management commands
-- `gk apps --help` — App management commands
-- `gk ops --help` — Operational commands
+- interactive API docs: `/api/v1`
+- OpenAPI schema: `/api/v1/openapi.json`
+- CLI help: `uv run gk --help`
 
 ```{toctree}
 :hidden:

@@ -63,6 +63,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   };
 
   const getGatekeeperUrl = () => config?.app_url || 'https://auth.example.com';
+  const getGatekeeperHost = () => getGatekeeperUrl().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 
   const handleSubmit = async () => {
     if (!slug || !name) return;
@@ -119,12 +120,12 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   const getNginxConfig = () => {
     const domain = getAppDomain() || 'myapp.example.com';
     const gkUrl = getGatekeeperUrl();
-    // Extract just the host from gkUrl for redirects
-    const gkHost = gkUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const gkHost = getGatekeeperHost();
 
     return `server {
     listen 80;
     server_name ${domain};
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
     # Gatekeeper auth validation endpoint
     location = /_gk/validate {
@@ -172,6 +173,14 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
 }`;
   };
+
+  const getAuthNoIndexSnippet = () => `server {
+    listen 80;
+    server_name ${getGatekeeperHost()};
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+
+    # ... rest of your auth.${getBaseDomain()} config
+}`;
 
   const CodeBlock = ({
     code,
@@ -366,6 +375,17 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                       </code>{' '}
                       to your server's IP address in DNS.
                     </p>
+                  </div>
+
+                  <div className="bg-yellow-100 border-2 border-yellow-500 p-3 space-y-2">
+                    <p className="text-sm">
+                      <strong>Auth host noindex:</strong> Your Gatekeeper auth domain should send
+                      <code className="bg-yellow-200 px-1 font-mono text-xs mx-1">
+                        X-Robots-Tag: noindex
+                      </code>
+                      so it does not get indexed.
+                    </p>
+                    <CodeBlock code={getAuthNoIndexSnippet()} id="auth-noindex" />
                   </div>
 
                   {/* App-specific config inputs */}

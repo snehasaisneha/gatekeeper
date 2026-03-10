@@ -1,150 +1,134 @@
 # Managing users
 
-This guide covers adding users, handling registration approvals, and managing permissions.
+Gatekeeper has three user states:
 
-## User lifecycle
+- `pending`: identity was established, but an admin has not approved access yet
+- `approved`: the user can sign in and access apps they are entitled to
+- `rejected`: the user is denied and cannot sign in
 
-Users in Gatekeeper go through these states:
+## How users enter the system
 
-1. **Pending** — Just registered, waiting for admin approval
-2. **Approved** — Can sign in and access granted apps
-3. **Rejected** — Registration denied, cannot sign in
+Gatekeeper does not rely on a separate long-lived registration flow. Users typically enter through the normal sign-in flow:
 
-Users from accepted email domains (see `ACCEPTED_DOMAINS`) skip the pending state and are approved automatically.
+1. the user visits `/signin`
+2. they authenticate with OTP, passkey, Google, or GitHub
+3. Gatekeeper either:
+   - auto-approves them if their email domain is trusted
+   - moves them into `pending`
+   - blocks them if they were already rejected/banned
 
-## Adding users
+## Internal vs external users
 
-### Via CLI
+Users from `ACCEPTED_DOMAINS` are treated as internal.
 
-Add a user directly:
+Internal users:
+
+- are auto-approved on first successful identity proof
+- generally do not need per-app grants for normal internal app access
+
+External users:
+
+- enter `pending` unless an admin created or approved them
+- need explicit app access for registered apps
+
+## Creating users manually
+
+### CLI
 
 ```bash
 uv run gk users add --email alice@example.com
-```
-
-This creates an approved user who can sign in immediately.
-
-Add an admin user:
-
-```bash
 uv run gk users add --email admin@example.com --admin
-```
-
-Add a seeded user (pre-approved, for initial setup):
-
-```bash
 uv run gk users add --email founder@example.com --admin --seeded
 ```
 
-### Via self-registration
+Notes:
 
-Users can register themselves at `/register`. They enter their email, verify with a code, and:
+- plain `add` creates a pending user and attempts to send an invitation
+- `--seeded` creates an already-approved user
+- `--admin` grants admin privileges
 
-- If their domain is in `ACCEPTED_DOMAINS`, they're approved automatically
-- Otherwise, they go to pending status and need admin approval
+### Admin UI
 
-## Listing users
+Admins can also create, approve, reject, and update users from `/admin`.
 
-See all users:
+## Listing and filtering users
 
 ```bash
 uv run gk users list
-```
-
-Filter by status:
-
-```bash
 uv run gk users list --status pending
 uv run gk users list --status approved
 uv run gk users list --status rejected
+uv run gk users list --admins-only
 ```
 
 ## Approving users
 
-Approve a specific user:
-
 ```bash
 uv run gk users approve --email alice@example.com
-```
-
-Approve all pending users at once:
-
-```bash
 uv run gk users approve --all-pending
 ```
 
-You can also approve users from the admin panel at `/admin`.
+Approving a user moves them to `approved` and allows future sign-in to create a session.
 
 ## Rejecting users
-
-Reject a registration:
 
 ```bash
 uv run gk users reject --email spammer@example.com
 ```
 
-Rejected users cannot sign in. They can register again with the same email if you later remove them.
+From the admin API/UI, rejecting a pending user is also part of the security flow:
+
+- the email is banned
+- Gatekeeper attempts to find and ban the associated source IP
+- the action is recorded in audit/security logs
+
+This is most useful for spam sign-ups and disposable identities.
+
+## Security flow for bad sign-in attempts
+
+Gatekeeper records security-relevant sign-in attempts before approval too:
+
+- users who prove identity but land in `pending approval`
+- users whose OTP delivery fails
+- users who fail sign-in checks
+- rejected or banned users attempting to sign in again
+
+That data is intended to feed the security dashboard and ban decisions, not just the happy path.
 
 ## Updating users
 
-Change a user's name:
-
 ```bash
 uv run gk users update --email alice@example.com --name "Alice Smith"
-```
-
-Grant or revoke admin privileges:
-
-```bash
-# Make admin
 uv run gk users update --email alice@example.com --admin
-
-# Remove admin (use --no-admin)
 uv run gk users update --email alice@example.com --no-admin
 ```
 
+Admins can also update notification preferences from the UI/API.
+
 ## Removing users
-
-Remove a user:
-
-```bash
-uv run gk users remove --email alice@example.com
-```
-
-For users with app access, use `--force`:
 
 ```bash
 uv run gk users remove --email alice@example.com --force
 ```
 
-This also removes all their app access grants and sessions.
-
-## Admins vs regular users
-
-Admin users can:
-
-- Access the admin panel at `/admin`
-- Approve and reject registrations
-- Manage apps and access grants
-- View all users
-
-Regular users can:
-
-- Sign in to apps they have access to
-- View their own profile
-- Manage their passkeys
-- Request access to apps
+Removing a user deletes the account and associated auth data such as sessions and passkeys.
 
 ## Resetting sessions
 
-If a user's session is compromised, invalidate all their sessions:
-
 ```bash
 uv run gk ops reset-sessions --email alice@example.com
-```
-
-Or reset all sessions for everyone:
-
-```bash
 uv run gk ops reset-sessions
 ```
+
+Use this if:
+
+- a device is lost
+- a session cookie may have leaked
+- you changed access policy and want fresh login enforcement
+
+## Operational recommendations
+
+- Keep `ACCEPTED_DOMAINS` small and explicit.
+- Review pending users from unknown domains promptly.
+- Treat rejection as a security action, not just a workflow step.
+- For internal-only deployments, add `noindex` headers on auth and app domains so user names and app names do not appear in search results.

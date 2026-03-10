@@ -42,9 +42,9 @@ uv run gk users add --email admin@example.com --admin --seeded
 uv run gatekeeper
 ```
 
-Frontend: `cd frontend && npm install && npm run dev`
+Frontend dev mode: `cd frontend && npm install && npm run dev`
 
-**That's it.** API at `:8000`, frontend at `:4321`.
+**That's it.** In the simple setup, Gatekeeper runs on `:8000`. In frontend dev mode, Astro runs separately on `:4321`.
 
 ## Protecting Apps
 
@@ -117,7 +117,7 @@ sudo cp deployment/systemd/gatekeeper.service /etc/systemd/system/
 sudo systemctl enable --now gatekeeper
 
 # Nginx
-sudo cp deployment/nginx/gatekeeper.conf /etc/nginx/sites-available/
+sudo cp deployment/nginx/gatekeeper-server.conf /etc/nginx/sites-available/gatekeeper
 sudo certbot --nginx -d auth.example.com
 ```
 
@@ -137,4 +137,3 @@ See [`deployment/README.md`](deployment/README.md) for full guide.
 - Enterprise scale (1000+ users, complex RBAC hierarchies)
 - Multi-tenant SaaS (customer-facing auth)
 - Need for SAML/OIDC provider integration beyond Google/GitHub
-

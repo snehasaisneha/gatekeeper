@@ -1,128 +1,121 @@
 # Managing apps
 
-This guide covers registering apps, granting access, and setting up roles.
+An app in Gatekeeper is a protected service identified by a slug.
 
-## What's an app?
+Examples:
 
-In Gatekeeper, an "app" is any internal service you want to protect. Each app has:
+- `docs`
+- `grafana`
+- `jupyter`
+- `admin-panel`
 
-- A **slug** — URL-safe identifier (e.g., `grafana`, `wiki`, `admin-panel`)
-- A **name** — Human-readable display name
-- **Access grants** — Which users can access it
-
-When nginx checks authentication, it sends the app slug. Gatekeeper verifies the user is signed in *and* has access to that specific app.
+The slug is what nginx sends in `X-GK-App` during the auth subrequest.
 
 ## Registering apps
 
-Add a new app:
-
 ```bash
-uv run gk apps add --slug grafana --name "Grafana Dashboards"
+uv run gk apps add --slug docs --name "Engineering Docs"
+uv run gk apps add --slug grafana --name "Grafana"
 ```
 
-The slug must be URL-safe (letters, numbers, hyphens). It's used in nginx configuration.
+The slug must contain only lowercase letters, numbers, and hyphens.
 
-## Listing apps
-
-See all registered apps:
+## Listing and inspecting apps
 
 ```bash
 uv run gk apps list
-```
-
-View details for a specific app, including who has access:
-
-```bash
-uv run gk apps show --slug grafana
+uv run gk apps show --slug docs
 ```
 
 ## Granting access
 
-Grant a user access to an app:
+Explicit grants matter most for external users and for any deployment using strict app registration.
 
 ```bash
-uv run gk apps grant --slug grafana --email alice@example.com
-```
-
-Grant with a role hint:
-
-```bash
-uv run gk apps grant --slug grafana --email alice@example.com --role editor
-```
-
-Role hints are passed to your app in headers. Gatekeeper doesn't enforce roles—your app decides what they mean.
-
-Grant access to all approved users:
-
-```bash
+uv run gk apps grant --slug docs --email contractor@example.net
+uv run gk apps grant --slug docs --email alice@example.com --role editor
 uv run gk apps grant --slug wiki --all-approved
 ```
 
-This is useful for apps that should be available to everyone.
-
 ## Revoking access
 
-Remove a user's access:
-
 ```bash
-uv run gk apps revoke --slug grafana --email alice@example.com
+uv run gk apps revoke --slug docs --email contractor@example.net
 ```
-
-The user can still sign in to Gatekeeper, but nginx will return 403 when they try to access this app.
 
 ## Removing apps
-
-Delete an app:
-
-```bash
-uv run gk apps remove --slug old-dashboard
-```
-
-If the app has access grants, use `--force`:
 
 ```bash
 uv run gk apps remove --slug old-dashboard --force
 ```
 
-## Access requests
+## Internal vs external access
 
-Users can request access to apps they don't have permission for. When they hit a 403, they see an option to request access.
+Gatekeeper distinguishes between:
 
-Admins can see pending requests in the admin panel and approve or deny them.
+- internal users: email domain is in `ACCEPTED_DOMAINS`
+- external users: everyone else
 
-## Using roles
+Registered app behavior:
 
-When you grant access with a role, Gatekeeper passes it to your app in the `X-Auth-Role` header.
+- internal users are broadly allowed
+- external users need explicit grants
+- admins bypass normal app restrictions
 
-nginx configuration:
+Unregistered app behavior is controlled by `DEFAULT_APP_ACCESS`:
+
+- `allow`: signed-in users can pass validation for unregistered apps
+- `deny`: unregistered apps return `403`
+
+If you want tight control, set `DEFAULT_APP_ACCESS=deny` and register every protected app.
+
+## Roles
+
+Roles are optional string hints attached to an app grant.
+
+```bash
+uv run gk apps grant --slug docs --email alice@example.com --role editor
+```
+
+Gatekeeper does not enforce role semantics. It forwards the role to your app in the auth response headers if your nginx config exposes it:
 
 ```nginx
 auth_request_set $auth_role $upstream_http_x_auth_role;
 proxy_set_header X-Auth-Role $auth_role;
 ```
 
-Your app can then use this to show different UI or enforce permissions:
+Common patterns:
 
-```python
-role = request.headers.get("X-Auth-Role", "viewer")
-if role == "admin":
-    # Show admin features
+- `viewer`, `editor`, `admin`
+- `read`, `write`
+- `member`, `owner`
+
+## nginx integration
+
+Typical protected-app snippet:
+
+```nginx
+location = /_gk/validate {
+    internal;
+    proxy_pass https://auth.example.com/api/v1/auth/validate;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-GK-App docs;
+    proxy_set_header Cookie $http_cookie;
+}
 ```
 
-Common role patterns:
+For internal apps on public hostnames, add:
 
-- `viewer` / `editor` / `admin`
-- `read` / `write`
-- `member` / `owner`
-
-The role is just a string—use whatever makes sense for your app.
-
-## Bulk operations
-
-Grant all approved users access to an app:
-
-```bash
-uv run gk apps grant --slug wiki --all-approved
+```nginx
+add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 ```
 
-This is useful when setting up a new app that everyone should access.
+If you also control the app HTML, add:
+
+```html
+<meta name="robots" content="noindex, nofollow, noarchive">
+```
+
+This is especially relevant for engineering docs, dashboards, notebooks, and internal admin tools.

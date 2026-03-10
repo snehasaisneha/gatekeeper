@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.user import User
+from gatekeeper.services.security import get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -88,28 +89,6 @@ def parse_user_agent(user_agent: str | None) -> dict[str, str]:
         device_info["type"] = "desktop"
 
     return device_info
-
-
-def get_client_ip(request: Request) -> str | None:
-    """Extract client IP from request, respecting X-Forwarded-For."""
-    # Check X-Forwarded-For header (set by reverse proxies)
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        # Take the first IP in the chain (original client)
-        return forwarded_for.split(",")[0].strip()
-
-    # Check X-Real-IP header
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip
-
-    # Fall back to direct client IP
-    if request.client:
-        return request.client.host
-
-    return None
-
-
 class AuditService:
     """Service for logging audit events."""
 

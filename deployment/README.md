@@ -61,7 +61,7 @@ nano .env  # Set SECRET_KEY, DATABASE_URL, COOKIE_DOMAIN, email config, etc.
 
 # Initialize database
 mkdir -p data
-uv run python -m gatekeeper.db.migrate
+uv run all-migrations
 
 # Create admin user
 uv run gk users add --email admin@example.com --admin --seeded
@@ -100,6 +100,15 @@ sudo ln -s /etc/nginx/sites-available/app.example.com /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d auth.example.com -d app.example.com
 ```
+
+The auth route template now includes:
+
+```nginx
+add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+```
+
+This should stay on your public auth host so search engines do not index your login pages.
+The protected-app template now includes the same header for internal app domains.
 
 ### 3. Register Apps
 
@@ -172,3 +181,13 @@ sudo journalctl -u gatekeeper -f --no-pager -n 50
 ### Login doesn't redirect back to app
 - Ensure frontend was rebuilt after redirect fix
 - Check `@login` location has `?redirect=$scheme://$host$request_uri`
+
+### Keep auth.example.com out of search
+- Ensure the auth nginx `server` block sends `X-Robots-Tag: noindex, nofollow, noarchive`
+- Rebuild and redeploy the frontend so `/robots.txt` is served with `Disallow: /`
+- Verify with `curl -I https://auth.example.com` and `curl https://auth.example.com/robots.txt`
+
+### Keep internal apps out of search
+- Leave `X-Robots-Tag: noindex, nofollow, noarchive` on protected app nginx server blocks too
+- If you control the app HTML, add `<meta name="robots" content="noindex, nofollow, noarchive">`
+- Verify with `curl -I https://app.example.com`

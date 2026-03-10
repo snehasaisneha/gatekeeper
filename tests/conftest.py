@@ -90,6 +90,7 @@ async def client(test_engine, test_session, test_db_path) -> AsyncGenerator[Asyn
         frontend_url="http://localhost:4321",
         webauthn_rp_id="localhost",
         webauthn_origin="http://localhost:4321",
+        trusted_proxy_ips="127.0.0.1,::1",
     )
 
     # Override dependencies
@@ -117,12 +118,16 @@ async def client(test_engine, test_session, test_db_path) -> AsyncGenerator[Asyn
 
     # Disable rate limiting for tests
     limiter.enabled = False
+    middleware_session_maker = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     # Also patch get_settings at module level for services and auth
     patches = [
         patch("gatekeeper.config.get_settings", return_value=test_settings),
         patch("gatekeeper.services.otp.get_settings", return_value=test_settings),
         patch("gatekeeper.api.v1.auth.settings", test_settings),
+        patch("gatekeeper.main.async_session_maker", middleware_session_maker),
         patch(
             "gatekeeper.services.email.EmailService.send_otp",
             new_callable=AsyncMock,

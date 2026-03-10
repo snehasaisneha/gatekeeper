@@ -1,115 +1,101 @@
-# Audit Logs
+# Audit logs
 
-Gatekeeper maintains a comprehensive audit log of authentication and administrative events for security and compliance purposes.
+Gatekeeper records authentication, admin, and security events in `audit_logs`.
 
-## What's logged
+## Why this matters
 
-### Authentication events
+The audit trail is not only for successful sign-ins. It is also part of the abuse-review path for:
 
-| Event | Description |
-|-------|-------------|
-| `auth.signin.otp_sent` | OTP code requested |
-| `auth.signin.otp_success` | OTP verification successful |
-| `auth.signin.otp_failed` | OTP verification failed |
-| `auth.signin.google` | Google SSO sign-in successful |
-| `auth.signin.github` | GitHub SSO sign-in successful |
-| `auth.signin.passkey` | Passkey sign-in successful |
-| `auth.signin.failed` | Any sign-in method failed |
-| `auth.signout` | User signed out |
+- pending approval attempts
+- failed sign-in attempts
+- banned IP blocks
+- email and IP bans created during rejection or manual review
+
+## Common event families
+
+### Auth events
+
+- `auth.signin.otp_sent`
+- `auth.signin.otp_success`
+- `auth.signin.google`
+- `auth.signin.github`
+- `auth.signin.passkey`
+- `auth.signin.failed`
+- `auth.identity.pending_approval`
+- `auth.signout`
 
 ### Admin events
 
-| Event | Description |
-|-------|-------------|
-| `admin.user.created` | Admin created a user |
-| `admin.user.approved` | Admin approved a pending user |
-| `admin.user.rejected` | Admin rejected a user |
-| `admin.user.deleted` | Admin deleted a user |
-| `admin.user.updated` | Admin modified user settings |
-| `admin.app.created` | App registered |
-| `admin.app.updated` | App settings changed |
-| `admin.app.deleted` | App removed |
-| `admin.access.granted` | User granted app access |
-| `admin.access.revoked` | User access revoked |
-| `admin.domain.added` | Approved domain added |
-| `admin.domain.removed` | Approved domain removed |
+- `admin.user.created`
+- `admin.user.approved`
+- `admin.user.rejected`
+- `admin.user.updated`
+- `admin.user.deleted`
+- `admin.app.created`
+- `admin.app.updated`
+- `admin.app.deleted`
+- `admin.access.granted`
+- `admin.access.revoked`
+- `admin.domain.added`
+- `admin.domain.removed`
 
-## Log structure
+### Security events
 
-Each audit log entry contains:
+- `security.blocked.banned_ip`
+- `security.email.banned.rejected`
+- `security.ip.banned.cross`
+- manual ban/unban events from the security admin endpoints
 
-```json
-{
-  "id": "uuid",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "actor_id": "user-uuid",
-  "actor_email": "user@example.com",
-  "event_type": "auth.signin.google",
-  "target_type": "user",
-  "target_id": "target-uuid",
-  "ip_address": "192.168.1.1",
-  "user_agent": "Mozilla/5.0...",
-  "details": {
-    "method": "google",
-    "device": {
-      "browser": "Chrome",
-      "os": "macOS",
-      "type": "desktop"
-    }
-  }
-}
-```
+## Stored fields
 
-## Querying logs
+Audit records include:
+
+- timestamp
+- actor id/email
+- event type
+- target type/id when relevant
+- source IP
+- user agent
+- event details payload
+
+For sign-in events, Gatekeeper also records lightweight device parsing in the event details when a user agent is available.
+
+## How to view logs
+
+### Admin UI
+
+Use the admin dashboard for recent activity and security review.
 
 ### API
 
-Admins can query logs via the API:
+The admin API exposes audit log listing and filtering. Interactive docs are available at:
+
+- `/api/v1`
+- `/api/v1/openapi.json`
+
+Example:
 
 ```bash
-# List recent logs
-curl -X GET "https://auth.example.com/api/v1/admin/audit-logs" \
-  -H "Cookie: session=..."
-
-# Filter by event type
-curl -X GET "https://auth.example.com/api/v1/admin/audit-logs?event_type=auth.signin" \
-  -H "Cookie: session=..."
-
-# Filter by user
-curl -X GET "https://auth.example.com/api/v1/admin/audit-logs?actor_email=user@example.com" \
-  -H "Cookie: session=..."
-
-# Filter by time range
-curl -X GET "https://auth.example.com/api/v1/admin/audit-logs?since=2024-01-01T00:00:00Z&until=2024-01-31T23:59:59Z" \
-  -H "Cookie: session=..."
+curl -H "Cookie: session=..." \
+  "https://auth.example.com/api/v1/admin/audit-logs?page=1&page_size=50"
 ```
 
-### Query parameters
+## How to use the logs operationally
 
-| Parameter | Description |
-|-----------|-------------|
-| `page` | Page number (default: 1) |
-| `page_size` | Items per page (default: 50, max: 100) |
-| `event_type` | Filter by event type prefix (e.g., `auth.signin`) |
-| `actor_email` | Filter by actor email |
-| `target_type` | Filter by target type (`user`, `app`, `domain`) |
-| `since` | Events after this timestamp (ISO 8601) |
-| `until` | Events before this timestamp (ISO 8601) |
+- Review `auth.identity.pending_approval` events to see who is proving identity but waiting for access.
+- Review `auth.signin.failed` events for typo-heavy, bot-heavy, or suppressed-email patterns.
+- When rejecting spam users, confirm that the associated email and IP bans were created.
+- Use source IP data to distinguish one noisy bot from a shared internal NAT address.
 
-## Data retention
+## Retention
 
-Audit logs are stored in the database indefinitely by default. For compliance or storage reasons, you may want to implement a retention policy.
+Gatekeeper does not currently implement built-in retention policies. If you need one, apply it at the database/ops layer.
 
-To manually clean old logs:
+Example SQLite cleanup:
 
 ```sql
--- Delete logs older than 1 year
-DELETE FROM audit_logs WHERE timestamp < datetime('now', '-1 year');
+DELETE FROM audit_logs
+WHERE timestamp < datetime('now', '-180 days');
 ```
 
-## Security considerations
-
-- Audit logs are append-only — events cannot be modified or deleted through the API
-- Only super admins can view audit logs
-- Actor information is denormalized (email stored directly) so logs remain meaningful even if users are deleted
-- IP addresses are captured respecting `X-Forwarded-For` headers (set by reverse proxies)
+Apply retention cautiously if you rely on old abuse patterns during investigations.

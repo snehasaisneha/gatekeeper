@@ -50,6 +50,8 @@ sudo nginx -t && sudo systemctl reload nginx
 ```
 
 **Important:** The config includes `absolute_redirect off` and `port_in_redirect off` to prevent nginx from leaking the internal port (8000) in redirects.
+It should also send `X-Robots-Tag: noindex, nofollow, noarchive` on the auth host so search engines do not index your login domain.
+Gatekeeper should trust forwarded client IP headers only from this nginx tier. Set `TRUSTED_PROXY_IPS` in `.env` to the exact nginx/routing server IPs or CIDRs.
 
 ### 2. Routing Server - Gatekeeper Route
 
@@ -61,6 +63,21 @@ sudo nano /etc/nginx/sites-available/auth.example.com
 sudo ln -s /etc/nginx/sites-available/auth.example.com /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d auth.example.com
+```
+
+The auth route template includes:
+
+```nginx
+add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+```
+
+It should also overwrite the forwarding headers explicitly:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
 ### 3. Routing Server - Protected App Route
@@ -80,6 +97,18 @@ sudo nano /etc/nginx/sites-available/app.example.com
 sudo ln -s /etc/nginx/sites-available/app.example.com /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d app.example.com
+```
+
+For internal apps, the protected-app template also includes:
+
+```nginx
+add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+```
+
+If you control the app HTML too, add a page-level robots meta tag as defense in depth:
+
+```html
+<meta name="robots" content="noindex, nofollow, noarchive">
 ```
 
 ### 4. Register App in Gatekeeper
@@ -123,6 +152,23 @@ For SSO across subdomains (`auth.example.com`, `app.example.com`), set in Gateke
 ```
 COOKIE_DOMAIN=.example.com
 ```
+
+## Existing Deployments
+
+If your auth domain is already live, add this to the `server` block for `auth.example.com` and reload nginx:
+
+```nginx
+add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+```
+
+Then verify:
+
+```bash
+curl -I https://auth.example.com
+curl https://auth.example.com/robots.txt
+```
+
+The response headers should include `X-Robots-Tag: noindex, nofollow, noarchive`, and `robots.txt` should disallow all crawlers.
 
 ## API-Only Apps
 

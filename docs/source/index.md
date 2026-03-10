@@ -1,49 +1,34 @@
 # Gatekeeper
 
-Gatekeeper is a lightweight authentication gateway for protecting your internal tools. It sits in front of your apps and handles login, so you don't have to build auth into every service.
+Gatekeeper is a self-hosted authentication gateway for internal apps. It gives you one auth domain, one session, and one admin surface for sign-in, approvals, app access, and audit/security review.
 
-## Why Gatekeeper?
+## What Gatekeeper does
 
-- **Simple**: One binary, one database file, deploy in 15 minutes
-- **Multiple auth methods**: Google SSO, email codes, or passkeys—no passwords to manage
-- **Self-hosted**: Your data stays on your servers, no vendor lock-in
-- **Multi-app SSO**: One login works across all your internal tools
+- Puts a dedicated auth service in front of internal apps using nginx `auth_request`
+- Supports email OTP, passkeys, Google SSO, and GitHub SSO
+- Auto-approves users from trusted domains and sends everyone else into pending approval
+- Lets admins manage users, apps, domains, bans, branding, and audit logs from one place
+- Keeps your auth data on your infrastructure
 
-## How it works
+## Typical flow
 
-Gatekeeper runs alongside nginx. When someone visits a protected app, nginx asks Gatekeeper "is this person allowed in?" If yes, they get through. If not, they're sent to sign in.
+1. A user visits `https://docs.example.com`.
+2. nginx makes a subrequest to Gatekeeper at `/api/v1/auth/validate`.
+3. If the user is not signed in, nginx redirects them to `https://auth.example.com/signin`.
+4. The user proves identity with OTP, passkey, Google, or GitHub.
+5. If their account is approved, Gatekeeper sets a session cookie and redirects them back.
+6. If their account is pending, Gatekeeper records the attempt and waits for admin approval.
 
-```
-User → nginx → Gatekeeper: "Is this user authenticated?"
-                    ↓
-              Yes: Let them through
-              No:  Redirect to sign-in page
-```
+## Operational model
 
-Once signed in, users can access any app they've been granted access to without signing in again.
+Gatekeeper works best when:
 
-## Quick start
+- `auth.example.com` is your dedicated auth host
+- internal apps live on sibling subdomains such as `docs.example.com` or `grafana.example.com`
+- `COOKIE_DOMAIN=.example.com` is set for cross-subdomain SSO
+- auth and internal app domains send `X-Robots-Tag: noindex, nofollow, noarchive`
 
-```bash
-# Install
-git clone https://github.com/snehasaisneha/gatekeeper
-cd gatekeeper
-uv sync
-
-# Configure (copy and edit .env.example)
-cp .env.example .env
-
-# Set up database and create admin
-uv run all-migrations
-uv run gk users add --email you@example.com --admin --seeded
-
-# Run
-uv run gk ops serve
-```
-
-Then open `http://localhost:8000` and sign in with your email.
-
-## What's next?
+## Start here
 
 ::::{grid} 1 2 2 2
 :gutter: 3
@@ -52,21 +37,21 @@ Then open `http://localhost:8000` and sign in with your email.
 :link: getting-started/index
 :link-type: doc
 
-Install Gatekeeper, configure it, and protect your first app.
+Install Gatekeeper, configure email and domains, create your first admin, and protect your first app.
 :::
 
 :::{grid-item-card} Guides
 :link: guides/index
 :link-type: doc
 
-Step-by-step instructions for common tasks like adding users and apps.
+Operational guides for users, apps, deployment, audit logs, and SSO providers.
 :::
 
 :::{grid-item-card} Reference
 :link: reference/index
 :link-type: doc
 
-CLI commands, environment variables, and configuration details.
+Current CLI, API, and environment reference for the running product.
 :::
 
 ::::

@@ -1,274 +1,220 @@
 # Configuration
 
-Gatekeeper is configured entirely through environment variables. Create a `.env` file in the project root, or set them in your shell or deployment environment.
+Gatekeeper is configured through environment variables loaded from `.env`.
 
-## Required settings
-
-These must be set for Gatekeeper to run:
-
-### SECRET_KEY
-
-A random string used to sign session tokens. Must be at least 32 characters.
+## Minimum working config
 
 ```bash
-SECRET_KEY=your-random-secret-key-here-make-it-long
+SECRET_KEY="$(openssl rand -hex 32)"
+APP_NAME="Gatekeeper"
+APP_URL="https://auth.example.com"
+FRONTEND_URL="https://auth.example.com"
+DATABASE_URL="sqlite+aiosqlite:///./data/gatekeeper.db"
+
+EMAIL_PROVIDER="smtp"
+SMTP_HOST="smtp.example.com"
+SMTP_PORT=587
+SMTP_USER="smtp-user"
+SMTP_PASSWORD="smtp-password"
+SMTP_FROM_EMAIL="auth@example.com"
+
+WEBAUTHN_RP_ID="auth.example.com"
+WEBAUTHN_RP_NAME="Gatekeeper"
+WEBAUTHN_ORIGIN="https://auth.example.com"
 ```
 
-Generate one with:
+## Core settings
+
+### `SECRET_KEY`
+
+Required. Must be at least 32 characters.
 
 ```bash
-openssl rand -hex 32
+SECRET_KEY="$(openssl rand -hex 32)"
 ```
 
-:::{warning}
-Keep this secret. If it leaks, attackers can forge session tokens.
-:::
+### `APP_URL`
 
-### APP_URL
-
-The public URL where Gatekeeper is hosted.
+Public URL for the Gatekeeper backend/auth host.
 
 ```bash
-APP_URL=https://auth.example.com
+APP_URL="https://auth.example.com"
 ```
 
-### FRONTEND_URL
+### `FRONTEND_URL`
 
-The URL where the frontend is served. Usually the same as `APP_URL`.
+Public URL for the frontend. In most deployments it matches `APP_URL`.
 
 ```bash
-FRONTEND_URL=https://auth.example.com
+FRONTEND_URL="https://auth.example.com"
 ```
 
-## Email settings
+### `DATABASE_URL`
 
-Gatekeeper sends login codes by email. Configure one of these providers:
-
-### AWS SES
+SQLite is the default/simple option. PostgreSQL is appropriate if you need an external database.
 
 ```bash
-EMAIL_PROVIDER=ses
-SES_REGION=us-east-1
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=...
-EMAIL_FROM=noreply@yourdomain.com
+DATABASE_URL="sqlite+aiosqlite:///./data/gatekeeper.db"
+DATABASE_URL="postgresql+asyncpg://user:pass@db.example.com/gatekeeper"
 ```
+
+## Email delivery
+
+Gatekeeper uses email for OTP sign-in and admin notifications.
 
 ### SMTP
 
 ```bash
-EMAIL_PROVIDER=smtp
-SMTP_HOST=smtp.example.com
+EMAIL_PROVIDER="smtp"
+SMTP_HOST="smtp.example.com"
 SMTP_PORT=587
-SMTP_USERNAME=user
-SMTP_PASSWORD=password
-EMAIL_FROM=noreply@yourdomain.com
+SMTP_USER="smtp-user"
+SMTP_PASSWORD="smtp-password"
+SMTP_FROM_EMAIL="auth@example.com"
+EMAIL_FROM_NAME="Gatekeeper"
 ```
 
-For Gmail, use an [App Password](https://support.google.com/accounts/answer/185833) instead of your regular password.
-
-## Database settings
-
-### DATABASE_URL
-
-Connection string for the database. Defaults to SQLite.
+### AWS SES
 
 ```bash
-# SQLite (default)
-DATABASE_URL=sqlite+aiosqlite:///./gatekeeper.db
-
-# PostgreSQL
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost/gatekeeper
+EMAIL_PROVIDER="ses"
+AWS_ACCESS_KEY_ID="AKIA..."
+AWS_SECRET_ACCESS_KEY="..."
+AWS_REGION="us-east-1"
+SES_FROM_EMAIL="auth@example.com"
+EMAIL_FROM_NAME="Gatekeeper"
 ```
 
-SQLite works well for small deployments. Use PostgreSQL for high availability or if you need multiple Gatekeeper instances.
+## User approval and access defaults
 
-## Cookie and SSO settings
+### `ACCEPTED_DOMAINS`
 
-### COOKIE_DOMAIN
-
-The domain for session cookies. Set this to enable SSO across subdomains.
+Comma-separated list of domains that should be treated as internal.
 
 ```bash
-# SSO across all *.example.com subdomains
-COOKIE_DOMAIN=.example.com
-
-# Single domain only (default)
-COOKIE_DOMAIN=auth.example.com
+ACCEPTED_DOMAINS="example.com,subsidiary.example"
 ```
 
-The leading dot (`.example.com`) allows the cookie to be shared across subdomains.
+Behavior:
 
-### SESSION_EXPIRY_DAYS
+- users from accepted domains are auto-approved
+- accepted-domain users are considered internal
+- internal users get broad app access behavior without needing per-app grants
 
-How long sessions last before users need to sign in again.
+### `DEFAULT_APP_ACCESS`
+
+Controls behavior when nginx asks for an app slug that is not registered in Gatekeeper.
 
 ```bash
-SESSION_EXPIRY_DAYS=30  # default
+DEFAULT_APP_ACCESS="allow"
+DEFAULT_APP_ACCESS="deny"
 ```
 
-## Passkey settings
+Use `deny` if you want all protected apps to be explicitly registered.
 
-For passwordless sign-in with passkeys (WebAuthn):
+## Sessions and cross-subdomain SSO
 
-### WEBAUTHN_RP_ID
+### `COOKIE_DOMAIN`
 
-The domain for passkey registration. Must match where users access Gatekeeper.
+Required for SSO across multiple subdomains.
 
 ```bash
-WEBAUTHN_RP_ID=auth.example.com
+COOKIE_DOMAIN=".example.com"
 ```
 
-### WEBAUTHN_RP_NAME
+If you only use the auth host itself, you can leave it unset.
 
-Display name shown in passkey prompts.
+### `SESSION_EXPIRY_DAYS`
 
 ```bash
-WEBAUTHN_RP_NAME=My Company Auth
+SESSION_EXPIRY_DAYS=30
 ```
 
-### WEBAUTHN_ORIGIN
+## OTP settings
 
-The full origin URL for passkey verification.
+### `OTP_EXPIRY_MINUTES`
 
 ```bash
-WEBAUTHN_ORIGIN=https://auth.example.com
+OTP_EXPIRY_MINUTES=5
 ```
 
-## User registration settings
+## WebAuthn / passkeys
 
-### ACCEPTED_DOMAINS
-
-Email domains that are automatically approved when users sign in. Comma-separated.
+These must match the public auth host users visit.
 
 ```bash
-ACCEPTED_DOMAINS=example.com,company.org
+WEBAUTHN_RP_ID="auth.example.com"
+WEBAUTHN_RP_NAME="Gatekeeper"
+WEBAUTHN_ORIGIN="https://auth.example.com"
 ```
 
-Users with emails from other domains go into a pending state and need admin approval.
+## OAuth providers
 
-:::{note}
-These domains are seeded into the database on startup. You can also manage domains via the admin UI or CLI (`gk domains add`).
-:::
-
-## Google SSO settings (optional)
-
-Enable "Sign in with Google" as an authentication option.
-
-### GOOGLE_CLIENT_ID
-
-OAuth 2.0 Client ID from Google Cloud Console.
+### Google
 
 ```bash
-GOOGLE_CLIENT_ID=123456789-abcdef.apps.googleusercontent.com
+GOOGLE_CLIENT_ID="..."
+GOOGLE_CLIENT_SECRET="..."
 ```
 
-### GOOGLE_CLIENT_SECRET
-
-OAuth 2.0 Client Secret from Google Cloud Console.
+### GitHub
 
 ```bash
-GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
+GITHUB_CLIENT_ID="..."
+GITHUB_CLIENT_SECRET="..."
 ```
 
-Both settings must be provided for Google SSO to be enabled. See the [Google SSO guide](../guides/google-sso.md) for setup instructions.
-
-## GitHub SSO settings (optional)
-
-Enable "Sign in with GitHub" as an authentication option. GitHub SSO checks all verified emails linked to the user's GitHub account.
-
-### GITHUB_CLIENT_ID
-
-OAuth Client ID from GitHub Developer Settings.
-
-```bash
-GITHUB_CLIENT_ID=your-github-client-id
-```
-
-### GITHUB_CLIENT_SECRET
-
-OAuth Client Secret from GitHub Developer Settings.
-
-```bash
-GITHUB_CLIENT_SECRET=your-github-client-secret
-```
-
-Both settings must be provided for GitHub SSO to be enabled. See the [GitHub SSO guide](../guides/github-sso.md) for setup instructions.
+If both values for a provider are present, that provider is enabled on the sign-in page.
 
 ## Server settings
 
-These settings configure the Gatekeeper API server. They can be set via environment variables or overridden with CLI arguments when running `gk ops serve`.
-
-### SERVER_HOST
-
-The address the server binds to.
-
 ```bash
-SERVER_HOST=0.0.0.0  # default - listen on all interfaces
+SERVER_HOST="0.0.0.0"
+SERVER_PORT=8000
+SERVER_RELOAD=false
 ```
 
-Use `127.0.0.1` to only accept local connections (recommended when behind a reverse proxy).
+In production, run without reload and usually behind nginx.
 
-### SERVER_PORT
+## Recommended production notes
 
-The port the server listens on.
+- Use a dedicated auth hostname such as `auth.example.com`.
+- Set `COOKIE_DOMAIN=.example.com` if apps live on sibling subdomains.
+- Configure nginx to send `X-Robots-Tag: noindex, nofollow, noarchive` on the auth host and protected internal apps.
+- Rebuild the frontend when deploying so `robots.txt` and current static assets are published.
 
-```bash
-SERVER_PORT=8000  # default
-```
+## Full variable list
 
-### SERVER_RELOAD
-
-Enable auto-reload on file changes. Useful for development, should be disabled in production.
-
-```bash
-SERVER_RELOAD=true   # default - enabled for development
-SERVER_RELOAD=false  # recommended for production
-```
-
-### CLI overrides
-
-All server settings can be overridden via CLI arguments:
-
-```bash
-# Override host and port
-gk ops serve --host 127.0.0.1 --port 9000
-
-# Production mode with multiple workers
-gk ops serve --no-reload --workers 4
-```
-
-See [CLI Reference](../reference/cli.md) for all available options.
-
-### OTP_EXPIRY_MINUTES
-
-How long login codes remain valid.
-
-```bash
-OTP_EXPIRY_MINUTES=10  # default
-```
-
-## All settings reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SECRET_KEY` | (required) | Token signing key, 32+ chars |
-| `DATABASE_URL` | `sqlite:///gatekeeper.db` | Database connection string |
-| `APP_URL` | `http://localhost:8000` | Public Gatekeeper URL |
-| `FRONTEND_URL` | `http://localhost:4321` | Frontend URL |
-| `COOKIE_DOMAIN` | `.localhost` | Cookie domain for SSO |
-| `SESSION_EXPIRY_DAYS` | `30` | Session lifetime |
-| `EMAIL_PROVIDER` | `ses` | `ses` or `smtp` |
-| `EMAIL_FROM` | (required) | Sender email address |
-| `ACCEPTED_DOMAINS` | (empty) | Auto-approve email domains |
-| `GOOGLE_CLIENT_ID` | (empty) | Google OAuth Client ID |
-| `GOOGLE_CLIENT_SECRET` | (empty) | Google OAuth Client Secret |
-| `GITHUB_CLIENT_ID` | (empty) | GitHub OAuth Client ID |
-| `GITHUB_CLIENT_SECRET` | (empty) | GitHub OAuth Client Secret |
-| `WEBAUTHN_RP_ID` | `localhost` | Passkey domain |
-| `WEBAUTHN_RP_NAME` | `Gatekeeper` | Passkey display name |
-| `WEBAUTHN_ORIGIN` | `http://localhost:8000` | Passkey origin |
-| `SERVER_HOST` | `0.0.0.0` | Server bind address |
-| `SERVER_PORT` | `8000` | Server port |
-| `SERVER_RELOAD` | `true` | Auto-reload on file changes |
-| `OTP_EXPIRY_MINUTES` | `10` | Login code validity |
+| Variable | Default |
+|---|---|
+| `APP_NAME` | `Gatekeeper` |
+| `APP_URL` | `http://localhost:8000` |
+| `FRONTEND_URL` | `http://localhost:4321` |
+| `SECRET_KEY` | required |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./gatekeeper.db` |
+| `EMAIL_PROVIDER` | `ses` |
+| `EMAIL_FROM_NAME` | `Gatekeeper` |
+| `AWS_ACCESS_KEY_ID` | empty |
+| `AWS_SECRET_ACCESS_KEY` | empty |
+| `AWS_REGION` | `us-east-1` |
+| `SES_FROM_EMAIL` | empty |
+| `SMTP_HOST` | empty |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | empty |
+| `SMTP_PASSWORD` | empty |
+| `SMTP_FROM_EMAIL` | empty |
+| `ACCEPTED_DOMAINS` | empty |
+| `OTP_EXPIRY_MINUTES` | `5` |
+| `SESSION_EXPIRY_DAYS` | `30` |
+| `COOKIE_DOMAIN` | unset |
+| `DEFAULT_APP_ACCESS` | `allow` |
+| `WEBAUTHN_RP_ID` | `localhost` |
+| `WEBAUTHN_RP_NAME` | `Gatekeeper` |
+| `WEBAUTHN_ORIGIN` | `http://localhost:4321` |
+| `GOOGLE_CLIENT_ID` | empty |
+| `GOOGLE_CLIENT_SECRET` | empty |
+| `GITHUB_CLIENT_ID` | empty |
+| `GITHUB_CLIENT_SECRET` | empty |
+| `SERVER_HOST` | `0.0.0.0` |
+| `SERVER_PORT` | `8000` |
+| `SERVER_RELOAD` | `true` |

@@ -1,63 +1,70 @@
-# CLI Reference
+# CLI reference
 
-:::{admonition} TODO
-:class: warning
+Gatekeeper ships a Typer CLI exposed as `gk`.
 
-This page is a placeholder. Full CLI reference coming soon.
-:::
-
-## Quick reference
+Run help at any level with:
 
 ```bash
-# User commands
-gk users add --email EMAIL [--admin] [--seeded] [--name NAME]
-gk users list [--status pending|approved|rejected|all]
-gk users approve --email EMAIL | --all-pending
-gk users reject --email EMAIL
-gk users update --email EMAIL [--name NAME] [--admin | --no-admin]
-gk users remove --email EMAIL [--force]
-
-# App commands
-gk apps add --slug SLUG --name NAME
-gk apps list
-gk apps show --slug SLUG
-gk apps grant --slug SLUG (--email EMAIL | --all-approved) [--role ROLE]
-gk apps revoke --slug SLUG --email EMAIL
-gk apps remove --slug SLUG [--force]
-
-# Operations
-gk ops serve [--host HOST] [--port PORT] [--reload | --no-reload] [--workers N]
-gk ops test-email --to EMAIL
-gk ops healthcheck
-gk ops reset-sessions [--email EMAIL]
+uv run gk --help
+uv run gk users --help
+uv run gk apps --help
+uv run gk domains --help
+uv run gk ops --help
 ```
 
-## Server command
-
-The `gk ops serve` command starts the Gatekeeper API server. It accepts the following options:
-
-| Option | Environment Variable | Default | Description |
-|--------|---------------------|---------|-------------|
-| `--host`, `-h` | `SERVER_HOST` | `0.0.0.0` | Host to bind to |
-| `--port`, `-p` | `SERVER_PORT` | `8000` | Port to bind to |
-| `--reload` / `--no-reload` | `SERVER_RELOAD` | `true` | Enable auto-reload on file changes |
-| `--workers`, `-w` | - | `1` | Number of worker processes |
-
-CLI arguments take precedence over environment variables.
+## Users
 
 ```bash
-# Use defaults from .env
-gk ops serve
-
-# Override host and port
-gk ops serve --host 127.0.0.1 --port 9000
-
-# Production mode with multiple workers
-gk ops serve --no-reload --workers 4
+uv run gk users add --email EMAIL [--admin] [--seeded] [--name NAME]
+uv run gk users list [--status all|pending|approved|rejected] [--admins-only] [--csv]
+uv run gk users approve --email EMAIL
+uv run gk users approve --all-pending
+uv run gk users reject --email EMAIL
+uv run gk users update --email EMAIL [--name NAME] [--admin | --no-admin]
+uv run gk users remove --email EMAIL [--force]
 ```
 
-:::{note}
-The `--workers` option is incompatible with `--reload`. When using multiple workers, reload is automatically disabled.
-:::
+## Apps
 
-Run `gk --help` for the complete list of options.
+```bash
+uv run gk apps add --slug SLUG --name NAME
+uv run gk apps list
+uv run gk apps show --slug SLUG
+uv run gk apps grant --slug SLUG --email EMAIL [--role ROLE]
+uv run gk apps grant --slug SLUG --all-approved [--role ROLE]
+uv run gk apps revoke --slug SLUG --email EMAIL
+uv run gk apps remove --slug SLUG [--force]
+```
+
+## Domains
+
+```bash
+uv run gk domains list
+uv run gk domains add --domain example.com
+uv run gk domains remove --domain example.com [--force]
+```
+
+## Operations
+
+```bash
+uv run gk ops serve [--host HOST] [--port PORT] [--reload | --no-reload] [--workers N]
+uv run gk ops healthcheck
+uv run gk ops reset-sessions [--email EMAIL]
+uv run gk ops test-email --to EMAIL
+```
+
+## Migrations
+
+Project-level shortcuts from `pyproject.toml`:
+
+```bash
+uv run all-migrations
+uv run migrations --name 011_add_security_tables
+```
+
+## Notes
+
+- `gk users add` creates a pending user unless you pass `--seeded`.
+- `gk apps grant --all-approved` is useful when you want a broadly available internal app.
+- `gk ops serve --workers N` disables reload mode when `N > 1`.
+- Use `uv run all-migrations` rather than calling the migration module directly.

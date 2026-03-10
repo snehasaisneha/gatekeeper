@@ -44,13 +44,13 @@ New SES accounts are in sandbox mode (can only send to verified emails). To send
 
 ```bash
 EMAIL_PROVIDER=ses
-SES_REGION=us-east-1
+AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
-EMAIL_FROM=noreply@yourdomain.com
+SES_FROM_EMAIL=noreply@yourdomain.com
 ```
 
-The `EMAIL_FROM` address must be from your verified domain.
+The `SES_FROM_EMAIL` address must be from your verified domain.
 
 ## SMTP setup
 
@@ -64,9 +64,9 @@ The `EMAIL_FROM` address must be from your verified domain.
 EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=you@gmail.com
+SMTP_USER=you@gmail.com
 SMTP_PASSWORD=your-app-password
-EMAIL_FROM=you@gmail.com
+SMTP_FROM_EMAIL=you@gmail.com
 ```
 
 ### Other SMTP servers
@@ -75,9 +75,9 @@ EMAIL_FROM=you@gmail.com
 EMAIL_PROVIDER=smtp
 SMTP_HOST=mail.example.com
 SMTP_PORT=587
-SMTP_USERNAME=user
+SMTP_USER=user
 SMTP_PASSWORD=password
-EMAIL_FROM=noreply@example.com
+SMTP_FROM_EMAIL=noreply@example.com
 ```
 
 Common ports:

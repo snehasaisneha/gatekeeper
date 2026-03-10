@@ -1,123 +1,104 @@
 # Getting Started
 
-This guide walks you through installing Gatekeeper, configuring it for your environment, and protecting your first app.
+This guide is the shortest path to a working Gatekeeper deployment.
 
-## Prerequisites
+## Before you start
 
-Before you start, you'll need:
+You need:
 
-- **Python 3.12+** installed
-- **uv** package manager ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
-- **nginx** for production deployments
-- An **email provider** (AWS SES or SMTP) for sending login codes
+- Python 3.12+
+- `uv`
+- nginx for production use
+- an email provider for OTP delivery
+- a public auth hostname such as `auth.example.com`
 
-For local development, you can skip nginx and use any SMTP server (or even a test email setup).
+For local development, you can run Gatekeeper directly without nginx and use a test SMTP setup.
 
-## Installation
-
-Clone the repository and install dependencies:
+## 1. Install the project
 
 ```bash
 git clone https://github.com/snehasaisneha/gatekeeper
 cd gatekeeper
 uv sync
+npm -C frontend install
 ```
 
-This installs Gatekeeper and all its dependencies in an isolated virtual environment.
-
-## Configuration
-
-Gatekeeper is configured through environment variables. Copy the example file and edit it:
+## 2. Create your config
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and set these required values:
+Set at least:
 
 ```bash
-# A random string, at least 32 characters. Used to sign session tokens.
-SECRET_KEY=your-secret-key-at-least-32-characters-long
-
-# Where Gatekeeper is hosted
-APP_URL=http://localhost:8000
-
-# Where the frontend is hosted (same as APP_URL for simple setups)
-FRONTEND_URL=http://localhost:8000
-```
-
-For email delivery, configure one of these:
-
-::::{tab-set}
-
-:::{tab-item} AWS SES
-```bash
-EMAIL_PROVIDER=ses
-SES_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
-EMAIL_FROM=noreply@yourdomain.com
-```
-:::
-
-:::{tab-item} SMTP
-```bash
-EMAIL_PROVIDER=smtp
-SMTP_HOST=smtp.gmail.com
+SECRET_KEY="$(openssl rand -hex 32)"
+APP_URL="http://localhost:8000"
+FRONTEND_URL="http://localhost:8000"
+DATABASE_URL="sqlite+aiosqlite:///./data/gatekeeper.db"
+EMAIL_PROVIDER="smtp"
+SMTP_HOST="smtp.example.com"
 SMTP_PORT=587
-SMTP_USERNAME=you@gmail.com
-SMTP_PASSWORD=your-app-password
-EMAIL_FROM=you@gmail.com
+SMTP_USER="smtp-user"
+SMTP_PASSWORD="smtp-password"
+SMTP_FROM_EMAIL="auth@example.com"
+WEBAUTHN_RP_ID="localhost"
+WEBAUTHN_ORIGIN="http://localhost:8000"
 ```
-:::
 
-::::
-
-See [Configuration](configuration.md) for all available options.
-
-## Database setup
-
-Initialize the database and run migrations:
+If you want users from company domains to be auto-approved, also set:
 
 ```bash
+ACCEPTED_DOMAINS="example.com,subsidiary.example"
+```
+
+## 3. Initialize the database
+
+```bash
+mkdir -p data
 uv run all-migrations
 ```
 
-This creates a SQLite database file (`gatekeeper.db`) in the current directory.
-
-## Create your admin account
-
-Create the first admin user:
+## 4. Create the first admin
 
 ```bash
 uv run gk users add --email you@example.com --admin --seeded
 ```
 
-The `--seeded` flag means this user is pre-approved and can sign in immediately. The `--admin` flag gives them access to the admin panel.
+`--seeded` creates an already-approved user so you can sign in immediately.
 
-## Start the server
-
-Run the development server:
+## 5. Build and run Gatekeeper
 
 ```bash
-uv run gk ops serve
+npm -C frontend run build
+uv run gk ops serve --host 127.0.0.1 --port 8000
 ```
 
-Open `http://localhost:8000` in your browser. You'll see the sign-in page.
+Open `http://localhost:8000/signin`.
 
-## Sign in
+## 6. Sign in and open the admin UI
 
-1. Enter your email address
-2. Check your inbox for the 6-digit code
-3. Enter the code to complete sign-in
+1. Enter your email at `/signin`.
+2. Complete OTP or use another configured method.
+3. Open `/admin`.
 
-You're now signed in as an admin. Click your email in the top right to access the admin panel.
+From there you can:
 
-## Next steps
+- review pending users
+- add approved domains
+- register apps
+- inspect bans and security events
+- adjust branding
 
-- [Configuration](configuration.md) — All environment variables explained
-- [Protecting your first app](first-app.md) — Set up nginx to protect a service
-- [Managing users](../guides/users.md) — Add and manage users
+## 7. Put nginx in front of your apps
+
+For production, Gatekeeper expects nginx to protect internal apps via `auth_request`.
+
+Read these next:
+
+- [Configuration](configuration.md)
+- [Protecting your first app](first-app.md)
+- [Deployment](../guides/deployment.md)
 
 ```{toctree}
 :hidden:

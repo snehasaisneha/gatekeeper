@@ -1,9 +1,11 @@
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
@@ -25,14 +27,15 @@ class BanCheckMiddleware(BaseHTTPMiddleware):
     """Middleware to check if the client IP is banned."""
 
     async def dispatch(self, request: Request, call_next):
-        # Only check auth endpoints to avoid unnecessary DB queries
-        if not request.url.path.startswith("/api/v1/auth"):
+        if (
+            request.url.path in {"/health", "/favicon.ico"}
+            or request.url.path.startswith("/static")
+        ):
             return await call_next(request)
 
-        # Get client IP
-        client_ip = get_client_ip(
-            dict(request.headers), request.client.host if request.client else "unknown"
-        )
+        client_ip = get_client_ip(request)
+        if not client_ip:
+            return await call_next(request)
 
         # Check if IP is banned
         try:
@@ -45,7 +48,7 @@ class BanCheckMiddleware(BaseHTTPMiddleware):
                     audit = AuditLog(
                         event_type="security.blocked.banned_ip",
                         ip_address=client_ip,
-                        details={"path": request.url.path},
+                        details=json.dumps({"path": request.url.path}),
                     )
                     db.add(audit)
                     await db.commit()
@@ -72,9 +75,9 @@ app = FastAPI(
     title=settings.app_name,
     description="Static authentication service for engineering documentation",
     version="0.1.0",
-    docs_url="/api/v1",
+    docs_url=None,
     redoc_url=None,
-    openapi_url="/api/v1/openapi.json",
+    openapi_url=None,
     swagger_ui_parameters={"defaultModelsExpandDepth": -1},
     lifespan=lifespan,
 )
@@ -101,15 +104,37 @@ if STATIC_DIR.exists():
 
 
 @app.get("/", include_in_schema=False)
-async def root_redirect() -> RedirectResponse:
-    return RedirectResponse(url="/api/v1")
+async def root_redirect(_request: Request) -> RedirectResponse:
+    return RedirectResponse(url="/api/v1" if settings.public_api_docs else "/health")
+
+
+@app.get("/api/v1", include_in_schema=False)
+@limiter.limit("30/minute")
+async def swagger_ui(request: Request):  # noqa: ARG001
+    if not settings.public_api_docs:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return get_swagger_ui_html(
+        openapi_url="/api/v1/openapi.json",
+        title=f"{settings.app_name} API",
+        swagger_ui_parameters={"defaultModelsExpandDepth": -1},
+    )
+
+
+@app.get("/api/v1/openapi.json", include_in_schema=False)
+@limiter.limit("20/minute")
+async def openapi_schema(request: Request):  # noqa: ARG001
+    if not settings.public_api_docs:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return JSONResponse(app.openapi())
 
 
 @app.get("/favicon.ico", include_in_schema=False)
-async def favicon() -> RedirectResponse:
+@limiter.exempt
+async def favicon(_request: Request) -> RedirectResponse:
     return RedirectResponse(url="/static/favicon.svg")
 
 
 @app.get("/health", tags=["Health"])
-async def health_check() -> dict[str, str]:
+@limiter.exempt
+async def health_check(_request: Request) -> dict[str, str]:
     return {"status": "healthy"}

@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     server_host: str = "0.0.0.0"
     server_port: int = 8000
     server_reload: bool = True
+    public_api_docs: bool = False
+    trusted_proxy_ips: str = "127.0.0.1,::1"
 
     @computed_field
     @property
@@ -90,6 +92,13 @@ class Settings(BaseSettings):
         if self.email_provider == "ses":
             return self.ses_from_email
         return self.smtp_from_email
+
+    @computed_field
+    @property
+    def trusted_proxy_ips_list(self) -> list[str]:
+        if not self.trusted_proxy_ips:
+            return []
+        return [ip.strip() for ip in self.trusted_proxy_ips.split(",") if ip.strip()]
 
     def is_accepted_domain(self, email: str) -> bool:
         if not self.accepted_domains_list:

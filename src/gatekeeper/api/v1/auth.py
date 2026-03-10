@@ -3,20 +3,23 @@ import json
 import logging
 import secrets
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 
 from gatekeeper.api.deps import CurrentUser, CurrentUserOptional, DbSession
 from gatekeeper.config import get_settings
 from gatekeeper.models.app import App, UserAppAccess
+from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.branding import Branding
 from gatekeeper.models.domain import ApprovedDomain
 from gatekeeper.models.otp import OTPPurpose
+from gatekeeper.models.security import BannedIP, BanReason
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.rate_limit import limiter
 from gatekeeper.schemas.auth import (
@@ -33,10 +36,11 @@ from gatekeeper.schemas.auth import (
     UserResponse,
 )
 from gatekeeper.schemas.branding import BrandingRead
-from gatekeeper.services.audit import AuditService
+from gatekeeper.services.audit import AuditService, EventType
 from gatekeeper.services.email import EmailService
 from gatekeeper.services.otp import OTPService
 from gatekeeper.services.passkey import PasskeyService
+from gatekeeper.services.security import get_client_ip
 from gatekeeper.services.session import SessionService
 from gatekeeper.utils.security import create_signed_token
 
@@ -48,6 +52,11 @@ settings = get_settings()
 
 COOKIE_NAME = "session"
 COOKIE_MAX_AGE = settings.session_expiry_days * 24 * 60 * 60
+OTP_SEND_LIMIT_PER_EMAIL_IP = 3
+OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP = 8
+AUTO_IP_BAN_FAILURE_THRESHOLD = 10
+AUTO_IP_BAN_WINDOW_MINUTES = 15
+AUTO_IP_BAN_DURATION_HOURS = 1
 
 
 async def is_internal_user(db: DbSession, email: str) -> bool:
@@ -100,6 +109,155 @@ async def _build_user_response(db: DbSession, user: User) -> UserResponse:
         notify_all_registrations=user.notify_all_registrations,
         created_at=user.created_at,
         updated_at=user.updated_at,
+    )
+
+
+async def _handle_pending_approval(
+    db: DbSession,
+    request: Request,
+    user: User,
+    *,
+    method: str,
+) -> None:
+    """Record and notify for users who proved identity but still need approval."""
+    audit_service = AuditService(db)
+    await audit_service.log(
+        "auth.identity.pending_approval",
+        actor=user,
+        request=request,
+        details={"method": method},
+    )
+
+    email_service = EmailService(db=db)
+    await email_service.send_registration_pending(user.email)
+
+    admin_stmt = select(User).where(
+        User.is_admin == True,  # noqa: E712
+        User.notify_new_registrations == True,  # noqa: E712
+    )
+    admin_result = await db.execute(admin_stmt)
+    admins = admin_result.scalars().all()
+    for admin in admins:
+        await email_service.send_pending_registration_notification(admin.email, user.email)
+
+
+async def _count_recent_audit_events(
+    db: DbSession,
+    *,
+    email: str | None = None,
+    ip_address: str | None = None,
+    event_types: tuple[str, ...],
+    since: datetime,
+) -> int:
+    conditions = [
+        AuditLog.timestamp >= since,
+        AuditLog.event_type.in_(event_types),
+    ]
+    if email is not None:
+        conditions.append(AuditLog.actor_email == email)
+    if ip_address is not None:
+        conditions.append(AuditLog.ip_address == ip_address)
+
+    stmt = select(func.count(AuditLog.id)).where(and_(*conditions))
+    result = await db.execute(stmt)
+    return result.scalar() or 0
+
+
+async def _enforce_signin_send_limits(db: DbSession, request: Request, email: str) -> None:
+    client_ip = get_client_ip(request)
+    if not client_ip:
+        return
+
+    cutoff = datetime.utcnow() - timedelta(minutes=AUTO_IP_BAN_WINDOW_MINUTES)
+    recent_sends = await _count_recent_audit_events(
+        db,
+        email=email,
+        ip_address=client_ip,
+        event_types=(EventType.AUTH_SIGNIN_OTP_SENT,),
+        since=cutoff,
+    )
+    if recent_sends >= OTP_SEND_LIMIT_PER_EMAIL_IP:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OTP requests for this email from your IP. Please wait and try again.",
+        )
+
+
+async def _enforce_signin_verify_limits(db: DbSession, request: Request, email: str) -> None:
+    client_ip = get_client_ip(request)
+    if not client_ip:
+        return
+
+    cutoff = datetime.utcnow() - timedelta(minutes=AUTO_IP_BAN_WINDOW_MINUTES)
+    recent_failures = await _count_recent_audit_events(
+        db,
+        email=email,
+        ip_address=client_ip,
+        event_types=(EventType.AUTH_SIGNIN_FAILED,),
+        since=cutoff,
+    )
+    if recent_failures >= OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed verification attempts for this email from your IP.",
+        )
+
+
+async def _maybe_auto_ban_ip_for_failures(
+    db: DbSession,
+    request: Request,
+    *,
+    associated_email: str | None = None,
+) -> None:
+    client_ip = get_client_ip(request)
+    if not client_ip:
+        return
+
+    existing_stmt = select(BannedIP).where(
+        and_(
+            BannedIP.ip_address == client_ip,
+            BannedIP.is_active == True,  # noqa: E712
+            or_(BannedIP.expires_at.is_(None), BannedIP.expires_at > datetime.utcnow()),
+        )
+    )
+    existing_result = await db.execute(existing_stmt)
+    if existing_result.scalar_one_or_none():
+        return
+
+    cutoff = datetime.utcnow() - timedelta(minutes=AUTO_IP_BAN_WINDOW_MINUTES)
+    recent_failures = await _count_recent_audit_events(
+        db,
+        ip_address=client_ip,
+        event_types=(EventType.AUTH_SIGNIN_FAILED,),
+        since=cutoff,
+    )
+    if recent_failures < AUTO_IP_BAN_FAILURE_THRESHOLD:
+        return
+
+    ban = BannedIP(
+        ip_address=client_ip,
+        reason=BanReason.RATE_LIMIT.value,
+        details="Automatic temporary ban after repeated authentication failures",
+        banned_by="SYSTEM",
+        expires_at=datetime.utcnow() + timedelta(hours=AUTO_IP_BAN_DURATION_HOURS),
+        is_active=True,
+        associated_email=associated_email,
+    )
+    db.add(ban)
+    db.add(
+        AuditLog(
+            event_type="security.ip.banned.automatic",
+            actor_email="SYSTEM",
+            ip_address=client_ip,
+            details=json.dumps(
+                {
+                    "reason": BanReason.RATE_LIMIT.value,
+                    "associated_email": associated_email,
+                    "window_minutes": AUTO_IP_BAN_WINDOW_MINUTES,
+                    "duration_hours": AUTO_IP_BAN_DURATION_HOURS,
+                }
+            ),
+        )
     )
 
 
@@ -202,6 +360,8 @@ async def validate(
 @limiter.limit("5/15minutes")
 async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageResponse:
     email = data.email.lower()
+    audit_service = AuditService(db)
+    await _enforce_signin_send_limits(db, request, email)
 
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
@@ -238,6 +398,8 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
 
     # Rejected users cannot sign in
     if user.status == UserStatus.REJECTED:
+        await audit_service.log_auth_failed("otp", email, request, reason="rejected_user")
+        await _maybe_auto_ban_ip_for_failures(db, request, associated_email=email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Your account was rejected. Please contact an administrator.",
@@ -250,10 +412,19 @@ async def signin(request: Request, data: OTPRequest, db: DbSession) -> MessageRe
     sent = await otp_service.create_and_send(email, OTPPurpose.SIGNIN)
 
     if not sent:
+        await audit_service.log_auth_failed("otp", email, request, reason="otp_delivery_failed")
+        await _maybe_auto_ban_ip_for_failures(db, request, associated_email=email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send verification email. Please try again.",
         )
+
+    await audit_service.log(
+        EventType.AUTH_SIGNIN_OTP_SENT,
+        actor=user,
+        request=request,
+        details={"method": "otp"},
+    )
 
     return MessageResponse(
         message="Verification code sent",
@@ -281,6 +452,7 @@ async def signin_verify(
     db: DbSession,
 ) -> AuthResponse:
     email = data.email.lower()
+    await _enforce_signin_verify_limits(db, request, email)
 
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
@@ -303,6 +475,7 @@ async def signin_verify(
     success, error_message = await otp_service.verify(email, data.code, OTPPurpose.SIGNIN)
     if not success:
         await audit_service.log_auth_failed("otp", email, request, reason=error_message)
+        await _maybe_auto_ban_ip_for_failures(db, request, associated_email=email)
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -311,19 +484,7 @@ async def signin_verify(
 
     # Handle pending users - notify them and admins who opted in
     if user.status == UserStatus.PENDING:
-        email_service = EmailService(db=db)
-        await email_service.send_registration_pending(email)
-
-        # Notify admins who have enabled registration notifications
-        admin_stmt = select(User).where(
-            User.is_admin == True,  # noqa: E712
-            User.notify_new_registrations == True,  # noqa: E712
-        )
-        admin_result = await db.execute(admin_stmt)
-        admins = admin_result.scalars().all()
-        for admin in admins:
-            await email_service.send_pending_registration_notification(admin.email, email)
-
+        await _handle_pending_approval(db, request, user, method="otp")
         await db.commit()
 
         return AuthResponse(
@@ -670,6 +831,7 @@ async def passkey_signin_verify(
 
     if not user:
         await audit_service.log_auth_failed("passkey", None, request, reason="Invalid credential")
+        await _maybe_auto_ban_ip_for_failures(db, request)
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -677,9 +839,16 @@ async def passkey_signin_verify(
         )
 
     if user.status != UserStatus.APPROVED:
-        await audit_service.log_auth_failed(
-            "passkey", user.email, request, reason="Account not approved"
-        )
+        if user.status == UserStatus.PENDING:
+            await _handle_pending_approval(db, request, user, method="passkey")
+            await db.commit()
+            return AuthResponse(
+                message="Your account is pending approval",
+                user=None,
+            )
+
+        await audit_service.log_auth_failed("passkey", user.email, request, reason="rejected_user")
+        await _maybe_auto_ban_ip_for_failures(db, request, associated_email=user.email)
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -758,6 +927,7 @@ async def delete_passkey(
     summary="Start Google OAuth",
     description="Redirect to Google OAuth for authentication.",
 )
+@limiter.limit("20/15minutes")
 async def google_login(
     request: Request,
     redirect: str | None = None,
@@ -798,6 +968,7 @@ async def google_login(
     summary="Google OAuth callback",
     description="Handle Google OAuth callback and create session.",
 )
+@limiter.limit("20/15minutes")
 async def google_callback(
     request: Request,
     response: Response,
@@ -806,16 +977,27 @@ async def google_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
+    audit_service = AuditService(db)
+
     # Handle OAuth errors
     if error:
+        await audit_service.log_auth_failed("google", None, request, reason=f"oauth_error:{error}")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error={error}")
 
     if not code or not state:
+        await audit_service.log_auth_failed("google", None, request, reason="missing_params")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=missing_params")
 
     # Verify state
     redirect_url = _oauth_states.pop(state, None)
     if redirect_url is None:
+        await audit_service.log_auth_failed("google", None, request, reason="invalid_state")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=invalid_state")
 
     try:
@@ -845,6 +1027,9 @@ async def google_callback(
 
         email = userinfo.get("email", "").lower()
         if not email:
+            await audit_service.log_auth_failed("google", None, request, reason="no_email")
+            await _maybe_auto_ban_ip_for_failures(db, request)
+            await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?error=no_email")
 
         # Find or create user
@@ -883,23 +1068,14 @@ async def google_callback(
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
+            await audit_service.log_auth_failed("google", email, request, reason="rejected_user")
+            await _maybe_auto_ban_ip_for_failures(db, request, associated_email=email)
+            await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?error=account_rejected")
 
         # Handle pending users
         if user.status == UserStatus.PENDING:
-            email_service = EmailService(db=db)
-            await email_service.send_registration_pending(email)
-
-            # Notify admins who have enabled registration notifications
-            admin_stmt = select(User).where(
-                User.is_admin == True,  # noqa: E712
-                User.notify_new_registrations == True,  # noqa: E712
-            )
-            admin_result = await db.execute(admin_stmt)
-            admins = admin_result.scalars().all()
-            for admin in admins:
-                await email_service.send_pending_registration_notification(admin.email, email)
-
+            await _handle_pending_approval(db, request, user, method="google")
             await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?pending=true")
 
@@ -912,7 +1088,6 @@ async def google_callback(
         session = await session_service.create(user)
 
         # Log successful sign-in
-        audit_service = AuditService(db)
         await audit_service.log_auth_success("google", user, request)
 
         await db.commit()
@@ -929,13 +1104,16 @@ async def google_callback(
 
     except httpx.HTTPStatusError:
         # Log failed OAuth
-        audit_service = AuditService(db)
         await audit_service.log_auth_failed(
             "google", None, request, reason="HTTP error from Google"
         )
+        await _maybe_auto_ban_ip_for_failures(db, request)
         await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
     except Exception:
+        await audit_service.log_auth_failed("google", None, request, reason="internal_error")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         logger.exception("Unexpected error in Google OAuth callback")
         return create_redirect(f"{settings.frontend_url}/signin?error=internal_error")
 
@@ -960,6 +1138,7 @@ async def google_enabled() -> dict[str, bool]:
     summary="Start GitHub OAuth",
     description="Redirect to GitHub OAuth for authentication.",
 )
+@limiter.limit("20/15minutes")
 async def github_login(
     request: Request,
     redirect: str | None = None,
@@ -997,6 +1176,7 @@ async def github_login(
     summary="GitHub OAuth callback",
     description="Handle GitHub OAuth callback and create session.",
 )
+@limiter.limit("20/15minutes")
 async def github_callback(
     request: Request,
     response: Response,
@@ -1005,16 +1185,27 @@ async def github_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
+    audit_service = AuditService(db)
+
     # Handle OAuth errors
     if error:
+        await audit_service.log_auth_failed("github", None, request, reason=f"oauth_error:{error}")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error={error}")
 
     if not code or not state:
+        await audit_service.log_auth_failed("github", None, request, reason="missing_params")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=missing_params")
 
     # Verify state
     redirect_url = _oauth_states.pop(state, None)
     if redirect_url is None:
+        await audit_service.log_auth_failed("github", None, request, reason="invalid_state")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=invalid_state")
 
     try:
@@ -1036,6 +1227,9 @@ async def github_callback(
 
             access_token = tokens.get("access_token")
             if not access_token:
+                await audit_service.log_auth_failed("github", None, request, reason="missing_token")
+                await _maybe_auto_ban_ip_for_failures(db, request)
+                await db.commit()
                 return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
 
             # Get user info
@@ -1064,6 +1258,11 @@ async def github_callback(
         verified_emails = [e["email"].lower() for e in emails_data if e.get("verified", False)]
 
         if not verified_emails:
+            await audit_service.log_auth_failed(
+                "github", None, request, reason="no_verified_email"
+            )
+            await _maybe_auto_ban_ip_for_failures(db, request)
+            await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?error=no_email")
 
         # Check if any verified email matches an approved domain
@@ -1101,6 +1300,11 @@ async def github_callback(
         if not user:
             # For GitHub, if no approved domain match, show specific error
             if not is_internal:
+                await audit_service.log_auth_failed(
+                    "github", email, request, reason="github_no_org_email"
+                )
+                await _maybe_auto_ban_ip_for_failures(db, request, associated_email=email)
+                await db.commit()
                 return create_redirect(f"{settings.frontend_url}/signin?error=github_no_org_email")
 
             # Auto-create user (only for internal domain matches)
@@ -1132,23 +1336,14 @@ async def github_callback(
 
         # Handle rejected users
         if user.status == UserStatus.REJECTED:
+            await audit_service.log_auth_failed("github", email, request, reason="rejected_user")
+            await _maybe_auto_ban_ip_for_failures(db, request, associated_email=email)
+            await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?error=account_rejected")
 
         # Handle pending users
         if user.status == UserStatus.PENDING:
-            email_service = EmailService(db=db)
-            await email_service.send_registration_pending(email)
-
-            # Notify admins who have enabled registration notifications
-            admin_stmt = select(User).where(
-                User.is_admin == True,  # noqa: E712
-                User.notify_new_registrations == True,  # noqa: E712
-            )
-            admin_result = await db.execute(admin_stmt)
-            admins = admin_result.scalars().all()
-            for admin in admins:
-                await email_service.send_pending_registration_notification(admin.email, email)
-
+            await _handle_pending_approval(db, request, user, method="github")
             await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?pending=true")
 
@@ -1161,7 +1356,6 @@ async def github_callback(
         session = await session_service.create(user)
 
         # Log successful sign-in
-        audit_service = AuditService(db)
         await audit_service.log_auth_success(
             "github", user, request, details={"email_matched": email}
         )
@@ -1180,13 +1374,16 @@ async def github_callback(
 
     except httpx.HTTPStatusError:
         # Log failed OAuth
-        audit_service = AuditService(db)
         await audit_service.log_auth_failed(
             "github", None, request, reason="HTTP error from GitHub"
         )
+        await _maybe_auto_ban_ip_for_failures(db, request)
         await db.commit()
         return create_redirect(f"{settings.frontend_url}/signin?error=oauth_failed")
     except Exception:
+        await audit_service.log_auth_failed("github", None, request, reason="internal_error")
+        await _maybe_auto_ban_ip_for_failures(db, request)
+        await db.commit()
         logger.exception("Unexpected error in GitHub OAuth callback")
         return create_redirect(f"{settings.frontend_url}/signin?error=internal_error")
 

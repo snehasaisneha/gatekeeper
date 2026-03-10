@@ -1,25 +1,19 @@
 # Guides
 
-Step-by-step instructions for common Gatekeeper tasks.
+These guides cover the operational parts of running Gatekeeper.
 
-## User management
+## Identity and access
 
-- [Managing users](users.md) — Add users, handle approvals, update permissions
-
-## App management
-
-- [Managing apps](apps.md) — Register apps, grant access, set up roles
-
-## Authentication
-
-- [Google SSO](google-sso.md) — Enable "Sign in with Google" authentication
-- [GitHub SSO](github-sso.md) — Enable "Sign in with GitHub" authentication
+- [Managing users](users.md): approvals, rejection, internal vs external users, and session handling
+- [Managing apps](apps.md): app registration, grants, roles, and nginx integration
+- [Google SSO](google-sso.md): provider setup and redirect details
+- [GitHub SSO](github-sso.md): provider setup and verified-email behavior
 
 ## Operations
 
-- [Email setup](email.md) — Configure AWS SES or SMTP for login codes
-- [Deployment](deployment.md) — Deploy Gatekeeper to production
-- [Audit logs](audit-logs.md) — Track authentication and admin events
+- [Deployment](deployment.md): production topology, nginx, systemd, and noindex guidance
+- [Email setup](email.md): SMTP and SES configuration
+- [Audit logs](audit-logs.md): auth/admin/security event visibility
 
 ```{toctree}
 :hidden:
