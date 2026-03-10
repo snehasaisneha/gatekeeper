@@ -442,9 +442,14 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
 
                   {/* Step 1: Install Nginx */}
                   <div className="space-y-3">
-                    <h3 className="font-bold uppercase tracking-wider">1. Install Nginx</h3>
-                    <p className="text-sm text-gray-500">Update packages and install nginx:</p>
-                    <CodeBlock code="sudo apt update && sudo apt install -y nginx" id="install" />
+                    <h3 className="font-bold uppercase tracking-wider">1. Install nginx and certbot</h3>
+                    <p className="text-sm text-gray-500">
+                      Update packages and install nginx with the certbot nginx plugin:
+                    </p>
+                    <CodeBlock
+                      code="sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx"
+                      id="install"
+                    />
                   </div>
 
                   {/* Step 2: Create config file */}
@@ -480,9 +485,6 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                   {/* Step 5: SSL */}
                   <div className="space-y-3">
                     <h3 className="font-bold uppercase tracking-wider">5. Set Up SSL</h3>
-
-                    <p className="text-sm text-gray-500">Install certbot:</p>
-                    <CodeBlock code="sudo apt install -y certbot" id="certbot-install" />
 
                     <p className="text-sm text-gray-500">Get SSL certificate:</p>
                     <CodeBlock code={`sudo certbot --nginx -d ${getAppDomain()}`} id="certbot-run" />

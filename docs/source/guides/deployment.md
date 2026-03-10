@@ -31,7 +31,7 @@ Gatekeeper runs as a systemd service. nginx handles SSL termination and routing.
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install nginx python3.12 python3.12-venv
+sudo apt install nginx certbot python3-certbot-nginx python3.12 python3.12-venv
 
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -260,7 +260,6 @@ sudo systemctl reload nginx
 Use Let's Encrypt for free certificates:
 
 ```bash
-sudo apt install certbot python3-certbot-nginx
 sudo certbot --nginx -d auth.example.com
 sudo certbot --nginx -d myapp.example.com
 ```

@@ -16,6 +16,11 @@ Nginx uses the `auth_request` directive to check authentication before serving r
 - Gatekeeper running and accessible
 - nginx installed on your server
 - An internal app you want to protect
+- For Ubuntu/Debian, install nginx and certbot together with:
+
+```bash
+sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
+```
 
 ## Step 1: Register the app
 

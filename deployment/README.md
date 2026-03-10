@@ -47,6 +47,9 @@ sudo mkdir -p /deploy && sudo chown $USER:$USER /deploy
 git clone <your-repo> /deploy/gatekeeper
 cd /deploy/gatekeeper
 
+# Install nginx and certbot if needed
+sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
+
 # Install uv if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc
