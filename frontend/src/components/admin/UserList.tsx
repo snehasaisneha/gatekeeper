@@ -62,6 +62,8 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
   const [recentIPs, setRecentIPs] = React.useState<string[]>([]);
   const [lastAuthMethod, setLastAuthMethod] = React.useState<string | null>(null);
   const [lastSeenAt, setLastSeenAt] = React.useState<string | null>(null);
+  const [showRecentActivity, setShowRecentActivity] = React.useState(false);
+  const [expandedAuditLogId, setExpandedAuditLogId] = React.useState<string | null>(null);
 
   // Grant access state
   const [selectedAppToGrant, setSelectedAppToGrant] = React.useState('');
@@ -108,6 +110,8 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
       setRecentIPs(investigationRes.recent_ip_addresses);
       setLastAuthMethod(investigationRes.last_auth_method);
       setLastSeenAt(investigationRes.last_seen_at);
+      setShowRecentActivity(false);
+      setExpandedAuditLogId(null);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -129,6 +133,8 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
       setRecentIPs([]);
       setLastAuthMethod(null);
       setLastSeenAt(null);
+      setShowRecentActivity(false);
+      setExpandedAuditLogId(null);
     } else {
       setExpandedUserId(userId);
       await loadUserDetail(userId);
@@ -353,6 +359,19 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
+  };
+
+  const summarizeAuditLog = (log: AuditLog) => {
+    const details = log.details || {};
+    const reason = typeof details.reason === 'string' ? details.reason : null;
+    const method = typeof details.method === 'string' ? details.method : null;
+    const matchedEmail = typeof details.email_matched === 'string' ? details.email_matched : null;
+
+    if (matchedEmail) return matchedEmail;
+    if (reason && method) return `${method}: ${reason}`;
+    if (reason) return reason;
+    if (method) return method;
+    return log.actor_email || log.target_id || 'No summary';
   };
 
   if (isLoading) {
@@ -826,32 +845,67 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                           </div>
 
                           <div className="space-y-4">
-                            <h4 className="font-bold uppercase tracking-wider text-sm flex items-center gap-2">
-                              <History className="h-4 w-4" />
-                              Recent Activity
-                            </h4>
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+                                <History className="h-4 w-4" />
+                                Recent Activity
+                              </h4>
+                              {recentAuditLogs.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => setShowRecentActivity((current) => !current)}
+                                >
+                                  {showRecentActivity ? 'Hide Logs' : 'Show Logs'}
+                                </Button>
+                              )}
+                            </div>
 
                             {recentAuditLogs.length === 0 ? (
                               <p className="text-sm text-gray-500 p-4 border-2 border-dashed border-gray-300">
                                 No recent audit activity for this user.
                               </p>
+                            ) : !showRecentActivity ? (
+                              <p className="text-sm text-gray-500 p-4 border-2 border-dashed border-gray-300">
+                                Recent activity is available but hidden by default. Click `Show Logs` to inspect it.
+                              </p>
                             ) : (
                               <div className="border-2 border-black bg-white">
                                 {recentAuditLogs.map((log) => (
                                   <div key={log.id} className="border-b-2 border-black p-3 last:border-b-0">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <Badge variant="secondary">{log.event_type}</Badge>
-                                        {log.ip_address && (
-                                          <span className="text-xs text-gray-500">{log.ip_address}</span>
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <Badge variant="secondary">{log.event_type}</Badge>
+                                          {log.ip_address && (
+                                            <span className="text-xs text-gray-500">{log.ip_address}</span>
+                                          )}
+                                        </div>
+                                        <p className="mt-2 text-sm font-medium break-all">
+                                          {summarizeAuditLog(log)}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-500">
+                                          {formatTimeAgo(log.timestamp)}
+                                        </span>
+                                        {log.details && (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() =>
+                                              setExpandedAuditLogId((current) =>
+                                                current === log.id ? null : log.id
+                                              )
+                                            }
+                                          >
+                                            {expandedAuditLogId === log.id ? 'Hide Details' : 'Details'}
+                                          </Button>
                                         )}
                                       </div>
-                                      <span className="text-xs text-gray-500">
-                                        {formatTimeAgo(log.timestamp)}
-                                      </span>
                                     </div>
-                                    {log.details && (
-                                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-gray-600">
+                                    {log.details && expandedAuditLogId === log.id && (
+                                      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap border-2 border-black bg-gray-50 p-3 text-xs text-gray-600">
                                         {JSON.stringify(log.details, null, 2)}
                                       </pre>
                                     )}
