@@ -103,6 +103,16 @@ class PendingUserList(BaseModel):
     }
 
 
+class UserLookupResponse(BaseModel):
+    """Lookup result for an email address in the admin UI."""
+
+    exists: bool = Field(..., description="Whether a user with this email already exists")
+    user: UserRead | None = Field(
+        default=None,
+        description="Existing user details when found",
+    )
+
+
 class DeploymentConfig(BaseModel):
     """Deployment configuration for Nginx setup instructions."""
 

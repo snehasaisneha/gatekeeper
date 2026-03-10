@@ -249,7 +249,7 @@ export function SecurityDashboard({ onRefresh }: SecurityDashboardProps) {
         <div className="border-4 border-black p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Blocked Today</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Requests Blocked Today</p>
               <p className="text-3xl font-bold mt-1">{stats?.blocked_today || 0}</p>
             </div>
             <ShieldX className="h-8 w-8 text-gray-400" />

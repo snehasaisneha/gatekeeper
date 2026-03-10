@@ -21,6 +21,7 @@ from gatekeeper.schemas.admin import (
     DeploymentConfig,
     PendingUserList,
     UserList,
+    UserLookupResponse,
 )
 from gatekeeper.schemas.app import (
     AppCreate,
@@ -237,6 +238,30 @@ async def remove_domain(domain: str, admin: AdminUser, db: DbSession) -> Message
 # ============================================================================
 # User Management Endpoints
 # ============================================================================
+
+
+@router.get(
+    "/users/lookup",
+    response_model=UserLookupResponse,
+    summary="Look up a user by email",
+    description="Check whether a user already exists for the given email. Admin only.",
+)
+async def lookup_user_by_email(
+    _admin: AdminUser,
+    db: DbSession,
+    email: str,
+) -> UserLookupResponse:
+    normalized_email = email.lower().strip()
+
+    stmt = select(User).where(User.email == normalized_email)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return UserLookupResponse(exists=False, user=None)
+
+    approved_domains = await _get_approved_domains_set(db)
+    return UserLookupResponse(exists=True, user=_user_to_read(user, approved_domains))
 
 
 @router.get(

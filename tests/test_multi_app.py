@@ -324,6 +324,59 @@ class TestAdminAppEndpoints:
         assert create_response.status_code == 400
         assert "reserved for the auth host" in create_response.json()["detail"].lower()
 
+    async def test_lookup_existing_user_by_email(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        admin = await create_test_user(
+            db_session, "lookup-admin@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+        existing_user = await create_test_user(
+            db_session, "existing@approved-domain.com", UserStatus.APPROVED
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        lookup_response = await client.get(
+            "/api/v1/admin/users/lookup",
+            params={"email": existing_user.email},
+            cookies=cookies,
+        )
+
+        assert lookup_response.status_code == 200
+        data = lookup_response.json()
+        assert data["exists"] is True
+        assert data["user"]["email"] == existing_user.email
+
+    async def test_lookup_missing_user_by_email(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        admin = await create_test_user(
+            db_session, "lookup-admin-2@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        lookup_response = await client.get(
+            "/api/v1/admin/users/lookup",
+            params={"email": "missing@approved-domain.com"},
+            cookies=cookies,
+        )
+
+        assert lookup_response.status_code == 200
+        assert lookup_response.json() == {"exists": False, "user": None}
+
     async def test_grant_and_revoke_access(self, client: AsyncClient, db_session: AsyncSession):
         """Test granting and revoking app access."""
         # Create admin and regular user

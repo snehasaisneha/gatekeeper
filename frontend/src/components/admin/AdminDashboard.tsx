@@ -194,7 +194,7 @@ export function AdminDashboard() {
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Blocked Today</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Requests Blocked Today</p>
               <p className="text-3xl font-bold mt-1">{blockedToday}</p>
             </div>
             <Shield className={`h-8 w-8 ${blockedToday > 0 ? 'text-red-500' : 'text-gray-400'}`} />

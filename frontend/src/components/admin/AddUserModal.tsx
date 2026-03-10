@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { api, ApiError } from '@/lib/api';
-import type { App, Domain } from '@/lib/api';
+import type { App, Domain, User } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -19,6 +19,8 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
   const [domains, setDomains] = React.useState<Domain[]>([]);
   const [isLoadingApps, setIsLoadingApps] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isCheckingExistingUser, setIsCheckingExistingUser] = React.useState(false);
+  const [existingUser, setExistingUser] = React.useState<User | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -43,11 +45,45 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
     const [, domain = ''] = email.trim().toLowerCase().split('@');
     return domain;
   }, [email]);
+  const normalizedEmail = email.trim().toLowerCase();
 
   const isInternalDomain = React.useMemo(
     () => domains.some((domain) => domain.domain === emailDomain),
     [domains, emailDomain],
   );
+
+  React.useEffect(() => {
+    if (!normalizedEmail.includes('@')) {
+      setExistingUser(null);
+      setIsCheckingExistingUser(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsCheckingExistingUser(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const lookup = await api.admin.lookupUserByEmail(normalizedEmail);
+        if (!cancelled) {
+          setExistingUser(lookup.user);
+        }
+      } catch {
+        if (!cancelled) {
+          setExistingUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCheckingExistingUser(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [normalizedEmail]);
 
   React.useEffect(() => {
     if (isInternalDomain || isAdmin) {
@@ -69,6 +105,10 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (existingUser) {
+      setError(`User '${existingUser.email}' already exists.`);
+      return;
+    }
     setIsSubmitting(true);
     setError(null);
 
@@ -140,6 +180,14 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
               {emailDomain && isInternalDomain && (
                 <p className="text-xs text-green-700">
                   This domain is approved as internal. The user will automatically have access to all apps.
+                </p>
+              )}
+              {isCheckingExistingUser && (
+                <p className="text-xs text-gray-500">Checking for an existing user...</p>
+              )}
+              {existingUser && (
+                <p className="text-xs text-red-600">
+                  This user already exists with status <strong>{existingUser.status}</strong>.
                 </p>
               )}
             </div>
@@ -220,7 +268,7 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
           <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || !email}>
+          <Button onClick={handleSubmit} disabled={isSubmitting || isCheckingExistingUser || !email || !!existingUser}>
             {isSubmitting ? (
               <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-2" />
             ) : (

@@ -36,6 +36,11 @@ export interface PendingUsersResponse {
   total: number;
 }
 
+export interface UserLookupResponse {
+  exists: boolean;
+  user: User | null;
+}
+
 // Domain types
 export interface Domain {
   id: string;
@@ -332,6 +337,9 @@ export const api = {
     listPendingUsers: () => request<PendingUsersResponse>('/admin/users/pending'),
 
     getUser: (id: string) => request<User>(`/admin/users/${id}`),
+
+    lookupUserByEmail: (email: string) =>
+      request<UserLookupResponse>(`/admin/users/lookup?email=${encodeURIComponent(email)}`),
 
     createUser: (email: string, isAdmin = false, autoApprove = true) =>
       request<User>('/admin/users', {
