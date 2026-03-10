@@ -46,6 +46,7 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
     return domain;
   }, [email]);
   const normalizedEmail = email.trim().toLowerCase();
+  const userAlreadyExists = existingUser !== null;
 
   const isInternalDomain = React.useMemo(
     () => domains.some((domain) => domain.domain === emailDomain),
@@ -177,7 +178,7 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
                 disabled={isSubmitting}
                 slim
               />
-              {emailDomain && isInternalDomain && (
+              {emailDomain && isInternalDomain && !userAlreadyExists && (
                 <p className="text-xs text-green-700">
                   This domain is approved as internal. The user will automatically have access to all apps.
                 </p>
@@ -192,7 +193,11 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
               )}
             </div>
 
-            <div className="flex items-center gap-3 p-3 border-2 border-black">
+            <div
+              className={`space-y-4 ${userAlreadyExists ? 'opacity-50 pointer-events-none' : ''}`}
+              aria-disabled={userAlreadyExists}
+            >
+              <div className="flex items-center gap-3 p-3 border-2 border-black">
               <input
                 type="checkbox"
                 id="is-admin"
@@ -204,62 +209,69 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
                   }
                 }}
                 className="h-5 w-5 border-2 border-black"
-                disabled={isSubmitting}
+                disabled={isSubmitting || userAlreadyExists}
               />
               <label htmlFor="is-admin" className="text-sm font-bold uppercase tracking-wider cursor-pointer">
                 Make Super Admin
               </label>
-            </div>
-
-            {!isAdmin && (
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider">
-                  Grant Access to Apps {isInternalDomain ? '(not needed)' : '(optional)'}
-                </label>
-                {isInternalDomain ? (
-                  <p className="text-xs text-gray-500">
-                    Internal users inherit access to every app from the approved domains list.
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    User will receive an email notification for each app.
-                  </p>
-                )}
-                {isLoadingApps ? (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="inline-block w-5 h-5 border-4 border-black border-t-transparent animate-spin" />
-                  </div>
-                ) : apps.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-2 text-center">No apps available.</p>
-                ) : isInternalDomain ? (
-                  <div className="border-2 border-black bg-gray-50 p-4 text-sm text-gray-600">
-                    This user will be added as an internal user and will see all apps automatically.
-                  </div>
-                ) : (
-                  <div className="border-2 border-black max-h-48 overflow-y-auto">
-                    {apps.map((app) => (
-                      <label
-                        key={app.slug}
-                        className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer border-b-2 border-black last:border-b-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedApps.has(app.slug)}
-                          onChange={() => toggleApp(app.slug)}
-                          className="h-4 w-4 border-2 border-black"
-                          disabled={isSubmitting}
-                        />
-                        <AppWindow className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-bold text-sm">{app.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{app.slug}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                )}
               </div>
-            )}
+
+              {!isAdmin && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider">
+                    Grant Access to Apps {isInternalDomain ? '(not needed)' : '(optional)'}
+                  </label>
+                  {userAlreadyExists ? (
+                    <p className="text-xs text-gray-500">User already exists.</p>
+                  ) : isInternalDomain ? (
+                    <p className="text-xs text-gray-500">
+                      Internal users inherit access to every app from the approved domains list.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      User will receive an email notification for each app.
+                    </p>
+                  )}
+                  {isLoadingApps ? (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="inline-block w-5 h-5 border-4 border-black border-t-transparent animate-spin" />
+                    </div>
+                  ) : apps.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-2 text-center">No apps available.</p>
+                  ) : userAlreadyExists ? (
+                    <div className="border-2 border-black bg-gray-50 p-4 text-sm text-gray-600">
+                      User already exists.
+                    </div>
+                  ) : isInternalDomain ? (
+                    <div className="border-2 border-black bg-gray-50 p-4 text-sm text-gray-600">
+                      This user will be added as an internal user and will see all apps automatically.
+                    </div>
+                  ) : (
+                    <div className="border-2 border-black max-h-48 overflow-y-auto">
+                      {apps.map((app) => (
+                        <label
+                          key={app.slug}
+                          className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer border-b-2 border-black last:border-b-0"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedApps.has(app.slug)}
+                            onChange={() => toggleApp(app.slug)}
+                            className="h-4 w-4 border-2 border-black"
+                            disabled={isSubmitting || userAlreadyExists}
+                          />
+                          <AppWindow className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm">{app.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{app.slug}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </form>
         </div>
 
