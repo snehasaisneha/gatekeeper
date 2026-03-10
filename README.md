@@ -103,6 +103,10 @@ Key environment variables (see `.env.example` for all):
 | `ACCEPTED_DOMAINS`    | Seed approved internal domains on startup           |
 | `EMAIL_PROVIDER`      | `ses` or `smtp`                                     |
 | `COOKIE_DOMAIN`       | `.example.com` for multi-app SSO                    |
+| `OTP_SEND_LIMIT_PER_EMAIL_IP` | Per email+IP OTP send throttle                |
+| `OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP` | Per email+IP OTP verify throttle      |
+| `AUTO_IP_BAN_FAILURE_THRESHOLD` | Failures from one IP before auto-ban         |
+| `AUTO_IP_BAN_DURATION_HOURS` | Duration for automatic temporary IP bans         |
 | `PUBLIC_API_DOCS`     | Leave `false` in production                         |
 | `TRUSTED_PROXY_IPS`   | Proxy IPs/CIDRs allowed to set forwarded IP headers |
 | `GOOGLE_CLIENT_ID`    | Google OAuth client ID (optional)                   |

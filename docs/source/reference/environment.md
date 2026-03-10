@@ -40,6 +40,11 @@ This page mirrors the runtime settings defined in `src/gatekeeper/config.py`.
 | `ACCEPTED_DOMAINS` | empty | Comma-separated trusted domains |
 | `OTP_EXPIRY_MINUTES` | `5` | OTP lifetime |
 | `SESSION_EXPIRY_DAYS` | `30` | Session lifetime |
+| `OTP_SEND_LIMIT_PER_EMAIL_IP` | `3` | Max OTP send attempts per email+IP within the auth failure window |
+| `OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP` | `8` | Max failed OTP verify attempts per email+IP within the auth failure window |
+| `AUTH_FAILURE_WINDOW_MINUTES` | `15` | Rolling window used for OTP throttling and automatic IP bans |
+| `AUTO_IP_BAN_FAILURE_THRESHOLD` | `10` | Failed auth attempts from one IP before an automatic temporary ban |
+| `AUTO_IP_BAN_DURATION_HOURS` | `1` | Automatic IP ban duration |
 | `COOKIE_DOMAIN` | unset | Use `.example.com` for sibling-subdomain SSO |
 | `DEFAULT_APP_ACCESS` | `allow` | Behavior for unregistered apps: `allow` or `deny` |
 

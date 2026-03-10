@@ -138,6 +138,18 @@ SESSION_EXPIRY_DAYS=30
 OTP_EXPIRY_MINUTES=5
 ```
 
+### Abuse controls
+
+```bash
+OTP_SEND_LIMIT_PER_EMAIL_IP=3
+OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP=8
+AUTH_FAILURE_WINDOW_MINUTES=15
+AUTO_IP_BAN_FAILURE_THRESHOLD=10
+AUTO_IP_BAN_DURATION_HOURS=1
+```
+
+These control how aggressively Gatekeeper throttles repeated OTP send/verify failures and when it converts repeated failures into a temporary IP ban.
+
 ## WebAuthn / passkeys
 
 These must match the public auth host users visit.
