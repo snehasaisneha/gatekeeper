@@ -1258,9 +1258,7 @@ async def github_callback(
         verified_emails = [e["email"].lower() for e in emails_data if e.get("verified", False)]
 
         if not verified_emails:
-            await audit_service.log_auth_failed(
-                "github", None, request, reason="no_verified_email"
-            )
+            await audit_service.log_auth_failed("github", None, request, reason="no_verified_email")
             await _maybe_auto_ban_ip_for_failures(db, request)
             await db.commit()
             return create_redirect(f"{settings.frontend_url}/signin?error=no_email")

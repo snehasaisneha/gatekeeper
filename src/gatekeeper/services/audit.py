@@ -89,6 +89,8 @@ def parse_user_agent(user_agent: str | None) -> dict[str, str]:
         device_info["type"] = "desktop"
 
     return device_info
+
+
 class AuditService:
     """Service for logging audit events."""
 

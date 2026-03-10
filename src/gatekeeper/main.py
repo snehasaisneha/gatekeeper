@@ -27,9 +27,8 @@ class BanCheckMiddleware(BaseHTTPMiddleware):
     """Middleware to check if the client IP is banned."""
 
     async def dispatch(self, request: Request, call_next):
-        if (
-            request.url.path in {"/health", "/favicon.ico"}
-            or request.url.path.startswith("/static")
+        if request.url.path in {"/health", "/favicon.ico"} or request.url.path.startswith(
+            "/static"
         ):
             return await call_next(request)
 

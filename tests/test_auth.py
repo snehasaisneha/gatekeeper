@@ -445,9 +445,7 @@ class TestPublicSurfaceProtection:
 
         assert response.status_code == 403
 
-    async def test_untrusted_peer_cannot_spoof_forwarded_for(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_untrusted_peer_cannot_spoof_forwarded_for(self, client: AsyncClient, db_session):
         from gatekeeper.main import app
 
         blocked_ip = "203.0.113.41"
