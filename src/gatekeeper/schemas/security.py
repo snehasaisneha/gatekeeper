@@ -168,6 +168,7 @@ class SecurityStats(BaseModel):
     """Security dashboard statistics."""
 
     blocked_today: int = Field(..., description="Number of blocked requests today")
+    manual_bans_today: int = Field(..., description="Number of manual bans created today")
     banned_ips: int = Field(..., description="Number of active IP bans")
     banned_emails: int = Field(..., description="Number of active email bans")
     failed_logins_today: int = Field(..., description="Number of failed logins today")
@@ -176,6 +177,7 @@ class SecurityStats(BaseModel):
         "json_schema_extra": {
             "example": {
                 "blocked_today": 12,
+                "manual_bans_today": 4,
                 "banned_ips": 3,
                 "banned_emails": 5,
                 "failed_logins_today": 47,

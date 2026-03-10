@@ -52,11 +52,6 @@ settings = get_settings()
 
 COOKIE_NAME = "session"
 COOKIE_MAX_AGE = settings.session_expiry_days * 24 * 60 * 60
-OTP_SEND_LIMIT_PER_EMAIL_IP = 3
-OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP = 8
-AUTO_IP_BAN_FAILURE_THRESHOLD = 10
-AUTO_IP_BAN_WINDOW_MINUTES = 15
-AUTO_IP_BAN_DURATION_HOURS = 1
 
 
 async def is_internal_user(db: DbSession, email: str) -> bool:
@@ -168,7 +163,7 @@ async def _enforce_signin_send_limits(db: DbSession, request: Request, email: st
     if not client_ip:
         return
 
-    cutoff = datetime.utcnow() - timedelta(minutes=AUTO_IP_BAN_WINDOW_MINUTES)
+    cutoff = datetime.utcnow() - timedelta(minutes=settings.auth_failure_window_minutes)
     recent_sends = await _count_recent_audit_events(
         db,
         email=email,
@@ -176,7 +171,7 @@ async def _enforce_signin_send_limits(db: DbSession, request: Request, email: st
         event_types=(EventType.AUTH_SIGNIN_OTP_SENT,),
         since=cutoff,
     )
-    if recent_sends >= OTP_SEND_LIMIT_PER_EMAIL_IP:
+    if recent_sends >= settings.otp_send_limit_per_email_ip:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many OTP requests for this email from your IP. Please wait and try again.",
@@ -188,7 +183,7 @@ async def _enforce_signin_verify_limits(db: DbSession, request: Request, email: 
     if not client_ip:
         return
 
-    cutoff = datetime.utcnow() - timedelta(minutes=AUTO_IP_BAN_WINDOW_MINUTES)
+    cutoff = datetime.utcnow() - timedelta(minutes=settings.auth_failure_window_minutes)
     recent_failures = await _count_recent_audit_events(
         db,
         email=email,
@@ -196,7 +191,7 @@ async def _enforce_signin_verify_limits(db: DbSession, request: Request, email: 
         event_types=(EventType.AUTH_SIGNIN_FAILED,),
         since=cutoff,
     )
-    if recent_failures >= OTP_VERIFY_FAIL_LIMIT_PER_EMAIL_IP:
+    if recent_failures >= settings.otp_verify_fail_limit_per_email_ip:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed verification attempts for this email from your IP.",
@@ -224,14 +219,14 @@ async def _maybe_auto_ban_ip_for_failures(
     if existing_result.scalar_one_or_none():
         return
 
-    cutoff = datetime.utcnow() - timedelta(minutes=AUTO_IP_BAN_WINDOW_MINUTES)
+    cutoff = datetime.utcnow() - timedelta(minutes=settings.auth_failure_window_minutes)
     recent_failures = await _count_recent_audit_events(
         db,
         ip_address=client_ip,
         event_types=(EventType.AUTH_SIGNIN_FAILED,),
         since=cutoff,
     )
-    if recent_failures < AUTO_IP_BAN_FAILURE_THRESHOLD:
+    if recent_failures < settings.auto_ip_ban_failure_threshold:
         return
 
     ban = BannedIP(
@@ -239,7 +234,7 @@ async def _maybe_auto_ban_ip_for_failures(
         reason=BanReason.RATE_LIMIT.value,
         details="Automatic temporary ban after repeated authentication failures",
         banned_by="SYSTEM",
-        expires_at=datetime.utcnow() + timedelta(hours=AUTO_IP_BAN_DURATION_HOURS),
+        expires_at=datetime.utcnow() + timedelta(hours=settings.auto_ip_ban_duration_hours),
         is_active=True,
         associated_email=associated_email,
     )
@@ -253,8 +248,8 @@ async def _maybe_auto_ban_ip_for_failures(
                 {
                     "reason": BanReason.RATE_LIMIT.value,
                     "associated_email": associated_email,
-                    "window_minutes": AUTO_IP_BAN_WINDOW_MINUTES,
-                    "duration_hours": AUTO_IP_BAN_DURATION_HOURS,
+                    "window_minutes": settings.auth_failure_window_minutes,
+                    "duration_hours": settings.auto_ip_ban_duration_hours,
                 }
             ),
         )
@@ -494,7 +489,7 @@ async def signin_verify(
 
     # Approved user - create session
     session_service = SessionService(db)
-    session = await session_service.create(user)
+    session = await session_service.create(user, request=request, auth_method="otp")
 
     # Log successful sign-in
     await audit_service.log_auth_success("otp", user, request)
@@ -856,7 +851,7 @@ async def passkey_signin_verify(
         )
 
     session_service = SessionService(db)
-    session = await session_service.create(user)
+    session = await session_service.create(user, request=request, auth_method="passkey")
 
     # Log successful sign-in
     await audit_service.log_auth_success("passkey", user, request)
@@ -1085,7 +1080,7 @@ async def google_callback(
 
         # Create session
         session_service = SessionService(db)
-        session = await session_service.create(user)
+        session = await session_service.create(user, request=request, auth_method="google")
 
         # Log successful sign-in
         await audit_service.log_auth_success("google", user, request)
@@ -1351,7 +1346,7 @@ async def github_callback(
 
         # Create session
         session_service = SessionService(db)
-        session = await session_service.create(user)
+        session = await session_service.create(user, request=request, auth_method="github")
 
         # Log successful sign-in
         await audit_service.log_auth_success(

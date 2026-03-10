@@ -4,7 +4,17 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
-import { api, type User, type App, ApiError } from '@/lib/api';
+import {
+  api,
+  type App,
+  type AuditLog,
+  type BannedEmail,
+  type BannedIP,
+  type User,
+  type UserAppAccess,
+  type UserSession,
+  ApiError,
+} from '@/lib/api';
 import {
   Trash2,
   Shield,
@@ -17,18 +27,15 @@ import {
   Check,
   X,
   Plus,
+  History,
+  Ban,
+  Monitor,
+  RefreshCw,
 } from 'lucide-react';
 
 interface UserListProps {
   initialUsers?: User[];
   onRefresh?: () => void;
-}
-
-interface UserAppAccess {
-  app_slug: string;
-  app_name: string;
-  role: string | null;
-  granted_at: string;
 }
 
 export function UserList({ initialUsers, onRefresh }: UserListProps) {
@@ -48,6 +55,13 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
   const [isLoadingDetail, setIsLoadingDetail] = React.useState(false);
   const [userDetail, setUserDetail] = React.useState<User | null>(null);
   const [isSavingSettings, setIsSavingSettings] = React.useState(false);
+  const [activeSessions, setActiveSessions] = React.useState<UserSession[]>([]);
+  const [recentAuditLogs, setRecentAuditLogs] = React.useState<AuditLog[]>([]);
+  const [activeIPBans, setActiveIPBans] = React.useState<BannedIP[]>([]);
+  const [activeEmailBans, setActiveEmailBans] = React.useState<BannedEmail[]>([]);
+  const [recentIPs, setRecentIPs] = React.useState<string[]>([]);
+  const [lastAuthMethod, setLastAuthMethod] = React.useState<string | null>(null);
+  const [lastSeenAt, setLastSeenAt] = React.useState<string | null>(null);
 
   // Grant access state
   const [selectedAppToGrant, setSelectedAppToGrant] = React.useState('');
@@ -80,32 +94,20 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
   const loadUserDetail = async (userId: string) => {
     setIsLoadingDetail(true);
     try {
-      const [userRes, appsRes] = await Promise.all([
-        api.admin.getUser(userId),
+      const [investigationRes, appsRes] = await Promise.all([
+        api.admin.getUserInvestigation(userId),
         api.admin.listApps(),
       ]);
-      setUserDetail(userRes);
+      setUserDetail(investigationRes.user);
       setAllApps(appsRes.apps);
-
-      // Load user's app access
-      const accessList: UserAppAccess[] = [];
-      for (const app of appsRes.apps) {
-        try {
-          const detail = await api.admin.getApp(app.slug);
-          const userAccess = detail.users.find((u) => u.email === userRes.email);
-          if (userAccess) {
-            accessList.push({
-              app_slug: app.slug,
-              app_name: app.name,
-              role: userAccess.role,
-              granted_at: userAccess.granted_at,
-            });
-          }
-        } catch {
-          // Skip apps that fail to load
-        }
-      }
-      setUserApps(accessList);
+      setUserApps(investigationRes.app_access);
+      setActiveSessions(investigationRes.active_sessions);
+      setRecentAuditLogs(investigationRes.recent_audit_logs);
+      setActiveIPBans(investigationRes.active_ip_bans);
+      setActiveEmailBans(investigationRes.active_email_bans);
+      setRecentIPs(investigationRes.recent_ip_addresses);
+      setLastAuthMethod(investigationRes.last_auth_method);
+      setLastSeenAt(investigationRes.last_seen_at);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -120,6 +122,13 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
       setExpandedUserId(null);
       setUserDetail(null);
       setUserApps([]);
+      setActiveSessions([]);
+      setRecentAuditLogs([]);
+      setActiveIPBans([]);
+      setActiveEmailBans([]);
+      setRecentIPs([]);
+      setLastAuthMethod(null);
+      setLastSeenAt(null);
     } else {
       setExpandedUserId(userId);
       await loadUserDetail(userId);
@@ -222,6 +231,42 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     }
   };
 
+  const handleRevokeSession = async (sessionId: string) => {
+    if (!userDetail) return;
+    if (!confirm('Revoke this session?')) return;
+
+    setActionLoading(`session-${sessionId}`);
+    setActionError(null);
+    try {
+      await api.admin.revokeUserSession(userDetail.id, sessionId);
+      await loadUserDetail(userDetail.id);
+      onRefresh?.();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to revoke session';
+      setActionError(message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRevokeAllSessions = async () => {
+    if (!userDetail) return;
+    if (!confirm(`Revoke all active sessions for ${userDetail.email}?`)) return;
+
+    setActionLoading(`sessions-all-${userDetail.id}`);
+    setActionError(null);
+    try {
+      await api.admin.revokeAllUserSessions(userDetail.id);
+      await loadUserDetail(userDetail.id);
+      onRefresh?.();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Failed to revoke sessions';
+      setActionError(message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleApprove = async (user: User) => {
     setActionLoading(user.id);
     setActionError(null);
@@ -294,6 +339,21 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
     // We need to fetch app details for roles, for now use default
     return ['admin', 'user'];
   }, [selectedAppToGrant, allApps]);
+
+  const formatTimeAgo = (dateStr: string | null) => {
+    if (!dateStr) return 'never';
+    const date = new Date(dateStr);
+    const diffMs = Date.now() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
 
   if (isLoading) {
     return (
@@ -473,6 +533,25 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                         </div>
                       ) : userDetail ? (
                         <div className="p-4 space-y-6">
+                          <div className="grid gap-4 md:grid-cols-4">
+                            <div className="border-2 border-black bg-white p-3">
+                              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Last Seen</p>
+                              <p className="mt-2 text-sm font-bold">{formatTimeAgo(lastSeenAt)}</p>
+                            </div>
+                            <div className="border-2 border-black bg-white p-3">
+                              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Last Auth</p>
+                              <p className="mt-2 text-sm font-bold uppercase">{lastAuthMethod || 'Unknown'}</p>
+                            </div>
+                            <div className="border-2 border-black bg-white p-3">
+                              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Recent IPs</p>
+                              <p className="mt-2 text-sm font-bold">{recentIPs[0] || 'None'}</p>
+                            </div>
+                            <div className="border-2 border-black bg-white p-3">
+                              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Active Sessions</p>
+                              <p className="mt-2 text-sm font-bold">{activeSessions.length}</p>
+                            </div>
+                          </div>
+
                           <div className="grid md:grid-cols-2 gap-6">
                             {/* Left Column - User Settings */}
                             <div className="space-y-4">
@@ -559,6 +638,11 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                                               <span className="text-xs text-gray-500">
                                                 Granted {new Date(access.granted_at).toLocaleDateString()}
                                               </span>
+                                              {access.granted_by && (
+                                                <span className="text-xs text-gray-500">
+                                                  by {access.granted_by}
+                                                </span>
+                                              )}
                                             </div>
                                           </div>
                                           <Button
@@ -633,6 +717,148 @@ export function UserList({ initialUsers, onRefresh }: UserListProps) {
                                 </>
                               )}
                             </div>
+                          </div>
+
+                          <div className="grid gap-6 lg:grid-cols-2">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+                                  <Monitor className="h-4 w-4" />
+                                  Active Sessions
+                                </h4>
+                                {activeSessions.length > 0 && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={handleRevokeAllSessions}
+                                    disabled={actionLoading === `sessions-all-${userDetail.id}`}
+                                  >
+                                    {actionLoading === `sessions-all-${userDetail.id}` ? (
+                                      <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin mr-2" />
+                                    ) : (
+                                      <RefreshCw className="h-4 w-4 mr-2" />
+                                    )}
+                                    Revoke All
+                                  </Button>
+                                )}
+                              </div>
+
+                              {activeSessions.length === 0 ? (
+                                <p className="text-sm text-gray-500 p-4 border-2 border-dashed border-gray-300">
+                                  No active sessions.
+                                </p>
+                              ) : (
+                                <div className="border-2 border-black bg-white">
+                                  {activeSessions.map((session) => (
+                                    <div
+                                      key={session.id}
+                                      className="flex items-start justify-between gap-4 border-b-2 border-black p-3 last:border-b-0"
+                                    >
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <Badge variant="secondary">{session.auth_method || 'unknown'}</Badge>
+                                          <span className="text-xs text-gray-500">{session.ip_address || 'No IP'}</span>
+                                        </div>
+                                        <p className="mt-2 text-xs text-gray-500 break-all">
+                                          {session.user_agent || 'No user agent'}
+                                        </p>
+                                        <p className="mt-2 text-xs text-gray-500">
+                                          Last seen {formatTimeAgo(session.last_seen_at)}. Expires{' '}
+                                          {new Date(session.expires_at).toLocaleString()}
+                                        </p>
+                                      </div>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleRevokeSession(session.id)}
+                                        disabled={actionLoading === `session-${session.id}`}
+                                        className="text-red-600 hover:text-red-600"
+                                      >
+                                        {actionLoading === `session-${session.id}` ? (
+                                          <div className="w-4 h-4 border-2 border-red-600 border-t-transparent animate-spin" />
+                                        ) : (
+                                          <X className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-4">
+                              <h4 className="font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+                                <Ban className="h-4 w-4" />
+                                Active Bans
+                              </h4>
+
+                              {activeIPBans.length === 0 && activeEmailBans.length === 0 ? (
+                                <p className="text-sm text-gray-500 p-4 border-2 border-dashed border-gray-300">
+                                  No active bans linked to this user.
+                                </p>
+                              ) : (
+                                <div className="space-y-3">
+                                  {activeIPBans.map((ban) => (
+                                    <div key={ban.id} className="border-2 border-black bg-white p-3">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="destructive">IP</Badge>
+                                        <span className="font-medium text-sm">{ban.ip_address}</span>
+                                      </div>
+                                      <p className="mt-2 text-xs text-gray-500">
+                                        {ban.reason} {ban.details ? `- ${ban.details}` : ''}
+                                      </p>
+                                    </div>
+                                  ))}
+                                  {activeEmailBans.map((ban) => (
+                                    <div key={ban.id} className="border-2 border-black bg-white p-3">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="destructive">Email</Badge>
+                                        <span className="font-medium text-sm">{ban.email}</span>
+                                      </div>
+                                      <p className="mt-2 text-xs text-gray-500">
+                                        {ban.reason} {ban.details ? `- ${ban.details}` : ''}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h4 className="font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+                              <History className="h-4 w-4" />
+                              Recent Activity
+                            </h4>
+
+                            {recentAuditLogs.length === 0 ? (
+                              <p className="text-sm text-gray-500 p-4 border-2 border-dashed border-gray-300">
+                                No recent audit activity for this user.
+                              </p>
+                            ) : (
+                              <div className="border-2 border-black bg-white">
+                                {recentAuditLogs.map((log) => (
+                                  <div key={log.id} className="border-b-2 border-black p-3 last:border-b-0">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant="secondary">{log.event_type}</Badge>
+                                        {log.ip_address && (
+                                          <span className="text-xs text-gray-500">{log.ip_address}</span>
+                                        )}
+                                      </div>
+                                      <span className="text-xs text-gray-500">
+                                        {formatTimeAgo(log.timestamp)}
+                                      </span>
+                                    </div>
+                                    {log.details && (
+                                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-gray-600">
+                                        {JSON.stringify(log.details, null, 2)}
+                                      </pre>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ) : null}

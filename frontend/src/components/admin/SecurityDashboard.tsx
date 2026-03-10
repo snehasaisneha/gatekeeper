@@ -61,7 +61,13 @@ export function SecurityDashboard({ onRefresh }: SecurityDashboardProps) {
       setStats(statsRes);
     } catch {
       // Stats endpoint may fail if migration not run
-      setStats({ blocked_today: 0, banned_ips: 0, banned_emails: 0, failed_logins_today: 0 });
+      setStats({
+        blocked_today: 0,
+        manual_bans_today: 0,
+        banned_ips: 0,
+        banned_emails: 0,
+        failed_logins_today: 0,
+      });
     }
 
     try {
@@ -245,7 +251,7 @@ export function SecurityDashboard({ onRefresh }: SecurityDashboardProps) {
       )}
 
       {/* Stats Overview */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="border-4 border-black p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -273,6 +279,16 @@ export function SecurityDashboard({ onRefresh }: SecurityDashboardProps) {
               <p className="text-3xl font-bold mt-1">{stats?.banned_emails || 0}</p>
             </div>
             <Mail className="h-8 w-8 text-gray-400" />
+          </div>
+        </div>
+
+        <div className="border-4 border-black p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Manual Bans Today</p>
+              <p className="text-3xl font-bold mt-1">{stats?.manual_bans_today || 0}</p>
+            </div>
+            <Ban className="h-8 w-8 text-gray-400" />
           </div>
         </div>
 

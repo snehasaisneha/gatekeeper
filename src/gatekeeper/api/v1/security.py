@@ -44,6 +44,7 @@ async def get_security_stats(admin: AdminUser, db: DbSession) -> SecurityStats:
     banned_ips = 0
     banned_emails = 0
     blocked_today = 0
+    manual_bans_today = 0
     failed_logins_today = 0
 
     try:
@@ -77,11 +78,25 @@ async def get_security_stats(admin: AdminUser, db: DbSession) -> SecurityStats:
         blocked_stmt = select(func.count(AuditLog.id)).where(
             and_(
                 AuditLog.event_type.like("security.blocked.%"),
-                AuditLog.created_at >= today_start,
+                AuditLog.timestamp >= today_start,
             )
         )
         blocked_result = await db.execute(blocked_stmt)
         blocked_today = blocked_result.scalar() or 0
+
+        manual_ban_stmt = select(func.count(AuditLog.id)).where(
+            and_(
+                AuditLog.event_type.in_(
+                    (
+                        "security.ip.banned.manual",
+                        "security.email.banned.manual",
+                    )
+                ),
+                AuditLog.timestamp >= today_start,
+            )
+        )
+        manual_ban_result = await db.execute(manual_ban_stmt)
+        manual_bans_today = manual_ban_result.scalar() or 0
 
         # Count failed logins today
         failed_stmt = select(func.count(AuditLog.id)).where(
@@ -90,7 +105,7 @@ async def get_security_stats(admin: AdminUser, db: DbSession) -> SecurityStats:
                     AuditLog.event_type == "auth.signin.otp_failed",
                     AuditLog.event_type == "auth.signin.passkey_failed",
                 ),
-                AuditLog.created_at >= today_start,
+                AuditLog.timestamp >= today_start,
             )
         )
         failed_result = await db.execute(failed_stmt)
@@ -100,6 +115,7 @@ async def get_security_stats(admin: AdminUser, db: DbSession) -> SecurityStats:
 
     return SecurityStats(
         blocked_today=blocked_today,
+        manual_bans_today=manual_bans_today,
         banned_ips=banned_ips,
         banned_emails=banned_emails,
         failed_logins_today=failed_logins_today,
@@ -507,7 +523,7 @@ async def list_security_events(
         stmt = (
             select(AuditLog)
             .where(or_(*conditions))
-            .order_by(AuditLog.created_at.desc())
+            .order_by(AuditLog.timestamp.desc())
             .limit(limit)
         )
         result = await db.execute(stmt)
@@ -520,15 +536,15 @@ async def list_security_events(
 
         events = []
         for log in logs:
-            details = log.details or {}
+            details = json.loads(log.details) if log.details else {}
             events.append(
                 SecurityEvent(
                     id=log.id,
                     event_type=log.event_type,
-                    ip_address=details.get("ip_address"),
+                    ip_address=log.ip_address or details.get("ip_address"),
                     email=log.actor_email or details.get("email"),
                     details=details.get("details") or details.get("reason"),
-                    created_at=log.created_at,
+                    created_at=log.timestamp,
                 )
             )
 

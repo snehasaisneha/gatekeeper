@@ -5,10 +5,12 @@ Tests for multi-app functionality.
 from unittest.mock import patch
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.models.app import App, UserAppAccess
 from gatekeeper.models.otp import OTPPurpose
+from gatekeeper.models.session import Session
 from gatekeeper.models.user import UserStatus
 
 from .conftest import create_test_user, get_latest_otp
@@ -434,3 +436,82 @@ class TestAdminAppEndpoints:
         )
         users = app_detail.json()["users"]
         assert len(users) == 0
+
+    async def test_user_investigation_returns_access_sessions_and_activity(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        admin = await create_test_user(
+            db_session,
+            "investigation-admin@approved-domain.com",
+            UserStatus.APPROVED,
+            is_admin=True,
+        )
+        user = await create_test_user(
+            db_session, "investigation-user@external-domain.com", UserStatus.APPROVED
+        )
+        app = await create_test_app(db_session, "investigation-app", "Investigation App")
+        await grant_app_access(db_session, user.id, app.id, role="viewer")
+
+        await client.post("/api/v1/auth/signin", json={"email": user.email})
+        user_otp = await get_latest_otp(db_session, user.email, OTPPurpose.SIGNIN)
+        await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": user.email, "code": user_otp},
+            headers={"user-agent": "InvestigationBrowser/1.0"},
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        admin_otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        admin_response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": admin_otp},
+        )
+        cookies = admin_response.cookies
+
+        response = await client.get(f"/api/v1/admin/users/{user.id}/investigation", cookies=cookies)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["user"]["email"] == user.email
+        assert data["app_access"][0]["app_slug"] == app.slug
+        assert data["app_access"][0]["role"] == "viewer"
+        assert data["active_sessions"][0]["auth_method"] == "otp"
+        assert data["recent_audit_logs"]
+        assert data["last_auth_method"] == "otp"
+
+    async def test_admin_can_revoke_user_session(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        admin = await create_test_user(
+            db_session, "session-admin@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+        user = await create_test_user(
+            db_session, "session-user@approved-domain.com", UserStatus.APPROVED
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": user.email})
+        user_otp = await get_latest_otp(db_session, user.email, OTPPurpose.SIGNIN)
+        await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": user.email, "code": user_otp},
+        )
+
+        session_result = await db_session.execute(select(Session).where(Session.user_id == user.id))
+        session = session_result.scalar_one()
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        admin_otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        admin_response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": admin_otp},
+        )
+        cookies = admin_response.cookies
+
+        revoke_response = await client.delete(
+            f"/api/v1/admin/users/{user.id}/sessions/{session.id}",
+            cookies=cookies,
+        )
+        assert revoke_response.status_code == 200
+
+        session_result = await db_session.execute(select(Session).where(Session.id == session.id))
+        assert session_result.scalar_one_or_none() is None

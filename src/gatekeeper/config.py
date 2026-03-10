@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     otp_expiry_minutes: int = 5
     session_expiry_days: int = 30
     cookie_domain: str | None = None  # e.g., ".example.com" for multi-app SSO
+    otp_send_limit_per_email_ip: int = 3
+    otp_verify_fail_limit_per_email_ip: int = 8
+    auth_failure_window_minutes: int = 15
+    auto_ip_ban_failure_threshold: int = 10
+    auto_ip_ban_duration_hours: int = 1
 
     # Multi-App Config
     # "allow" = unregistered apps allow any authenticated user

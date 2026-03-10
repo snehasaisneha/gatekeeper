@@ -4,7 +4,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatekeeper.api.deps import AdminUser, DbSession
@@ -20,8 +20,11 @@ from gatekeeper.schemas.admin import (
     AdminUpdateUser,
     DeploymentConfig,
     PendingUserList,
+    UserInvestigationAppAccess,
+    UserInvestigationRead,
     UserList,
     UserLookupResponse,
+    UserSessionRead,
 )
 from gatekeeper.schemas.app import (
     AppCreate,
@@ -42,7 +45,9 @@ from gatekeeper.schemas.branding import (
 )
 from gatekeeper.schemas.domain import DomainCreate, DomainList, DomainRead
 from gatekeeper.schemas.user import UserRead
+from gatekeeper.services.audit import AuditService, EventType
 from gatekeeper.services.email import EmailService
+from gatekeeper.services.session import SessionService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -83,6 +88,33 @@ def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
         notify_all_registrations=user.notify_all_registrations,
         created_at=user.created_at,
         updated_at=user.updated_at,
+    )
+
+
+def _audit_log_to_read(log: AuditLog) -> AuditLogRead:
+    return AuditLogRead(
+        id=log.id,
+        timestamp=log.timestamp,
+        actor_id=log.actor_id,
+        actor_email=log.actor_email,
+        event_type=log.event_type,
+        target_type=log.target_type,
+        target_id=log.target_id,
+        ip_address=log.ip_address,
+        user_agent=log.user_agent,
+        details=json.loads(log.details) if log.details else None,
+    )
+
+
+def _session_to_read(session) -> UserSessionRead:
+    return UserSessionRead(
+        id=session.id,
+        auth_method=session.auth_method,
+        ip_address=session.ip_address,
+        user_agent=session.user_agent,
+        created_at=session.created_at,
+        last_seen_at=session.last_seen_at,
+        expires_at=session.expires_at,
     )
 
 
@@ -355,6 +387,144 @@ async def get_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> UserR
 
     approved_domains = await _get_approved_domains_set(db)
     return _user_to_read(user, approved_domains)
+
+
+@router.get(
+    "/users/{user_id}/investigation",
+    response_model=UserInvestigationRead,
+    responses={
+        200: {"description": "Expanded user investigation details"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+    summary="Get user investigation details",
+    description="Get app access, recent activity, active sessions, and active bans for a user.",
+)
+async def get_user_investigation(
+    user_id: uuid.UUID,
+    admin: AdminUser,
+    db: DbSession,
+    audit_limit: int = Query(
+        20, ge=1, le=100, description="Number of recent audit events to return"
+    ),
+) -> UserInvestigationRead:
+    user_stmt = select(User).where(User.id == user_id)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    approved_domains = await _get_approved_domains_set(db)
+
+    app_access_stmt = (
+        select(UserAppAccess, App)
+        .join(App, App.id == UserAppAccess.app_id)
+        .where(UserAppAccess.user_id == user.id)
+        .order_by(UserAppAccess.granted_at.desc())
+    )
+    app_access_result = await db.execute(app_access_stmt)
+    app_access = [
+        UserInvestigationAppAccess(
+            app_slug=app.slug,
+            app_name=app.name,
+            app_description=app.description,
+            app_url=app.app_url,
+            role=access.role,
+            granted_at=access.granted_at,
+            granted_by=access.granted_by,
+        )
+        for access, app in app_access_result.all()
+    ]
+
+    session_service = SessionService(db)
+    sessions = await session_service.list_for_user(user.id)
+    active_sessions = [_session_to_read(session) for session in sessions]
+
+    audit_stmt = (
+        select(AuditLog)
+        .where(
+            or_(
+                AuditLog.actor_id == user.id,
+                AuditLog.actor_email == user.email,
+                and_(AuditLog.target_type == "user", AuditLog.target_id == str(user.id)),
+            )
+        )
+        .order_by(AuditLog.timestamp.desc())
+        .limit(audit_limit)
+    )
+    audit_result = await db.execute(audit_stmt)
+    recent_audit_logs = [_audit_log_to_read(log) for log in audit_result.scalars().all()]
+
+    recent_ip_addresses: list[str] = []
+    for log in recent_audit_logs:
+        if log.ip_address and log.ip_address not in recent_ip_addresses:
+            recent_ip_addresses.append(log.ip_address)
+
+    now = datetime.utcnow()
+    active_ip_ban_conditions = [
+        BannedIP.is_active == True,  # noqa: E712
+        or_(BannedIP.expires_at.is_(None), BannedIP.expires_at > now),
+    ]
+    if recent_ip_addresses:
+        active_ip_ban_conditions.append(
+            or_(
+                BannedIP.associated_email == user.email,
+                BannedIP.ip_address.in_(recent_ip_addresses),
+            )
+        )
+    else:
+        active_ip_ban_conditions.append(BannedIP.associated_email == user.email)
+
+    active_ip_bans_stmt = (
+        select(BannedIP).where(and_(*active_ip_ban_conditions)).order_by(BannedIP.banned_at.desc())
+    )
+    active_ip_bans_result = await db.execute(active_ip_bans_stmt)
+    active_ip_bans = list(active_ip_bans_result.scalars().all())
+
+    active_email_bans_stmt = (
+        select(BannedEmail)
+        .where(
+            BannedEmail.is_active == True,  # noqa: E712
+            or_(BannedEmail.expires_at.is_(None), BannedEmail.expires_at > now),
+            BannedEmail.email == user.email,
+            BannedEmail.is_pattern == False,  # noqa: E712
+        )
+        .order_by(BannedEmail.banned_at.desc())
+    )
+    active_email_bans_result = await db.execute(active_email_bans_stmt)
+    active_email_bans = list(active_email_bans_result.scalars().all())
+
+    last_auth_method = None
+    last_seen_at = active_sessions[0].last_seen_at if active_sessions else None
+    for log in recent_audit_logs:
+        if log.event_type in {
+            EventType.AUTH_SIGNIN_OTP_SUCCESS,
+            EventType.AUTH_SIGNIN_GOOGLE,
+            EventType.AUTH_SIGNIN_GITHUB,
+            EventType.AUTH_SIGNIN_PASSKEY,
+        }:
+            if log.details and isinstance(log.details.get("method"), str):
+                last_auth_method = log.details["method"]
+            else:
+                last_auth_method = log.event_type.rsplit(".", 1)[-1]
+            if last_seen_at is None or log.timestamp > last_seen_at:
+                last_seen_at = log.timestamp
+            break
+
+    return UserInvestigationRead(
+        user=_user_to_read(user, approved_domains),
+        app_access=app_access,
+        active_sessions=active_sessions,
+        recent_audit_logs=recent_audit_logs,
+        active_ip_bans=active_ip_bans,
+        active_email_bans=active_email_bans,
+        recent_ip_addresses=recent_ip_addresses,
+        last_auth_method=last_auth_method,
+        last_seen_at=last_seen_at,
+    )
 
 
 @router.post(
@@ -657,6 +827,83 @@ async def delete_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Me
     await db.flush()
 
     return MessageResponse(message="User deleted successfully")
+
+
+@router.delete(
+    "/users/{user_id}/sessions/{session_id}",
+    response_model=MessageResponse,
+    responses={
+        200: {"description": "Session revoked"},
+        404: {"model": ErrorResponse, "description": "User or session not found"},
+    },
+    summary="Revoke a user session",
+    description="Revoke a single active session for a user. Admin only.",
+)
+async def revoke_user_session(
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    admin: AdminUser,
+    db: DbSession,
+) -> MessageResponse:
+    user_stmt = select(User).where(User.id == user_id)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    session_service = SessionService(db)
+    deleted = await session_service.delete_session(session_id, user_id=user.id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    audit_service = AuditService(db)
+    await audit_service.log_admin_action(
+        EventType.AUTH_SESSION_REVOKED,
+        admin,
+        target_type="session",
+        target_id=str(session_id),
+        target_email=user.email,
+        changes={"user_id": str(user.id)},
+    )
+
+    return MessageResponse(message="Session revoked successfully")
+
+
+@router.post(
+    "/users/{user_id}/sessions/revoke-all",
+    response_model=MessageResponse,
+    responses={
+        200: {"description": "Sessions revoked"},
+        404: {"model": ErrorResponse, "description": "User not found"},
+    },
+    summary="Revoke all user sessions",
+    description="Revoke all active sessions for a user. Admin only.",
+)
+async def revoke_all_user_sessions(
+    user_id: uuid.UUID,
+    admin: AdminUser,
+    db: DbSession,
+) -> MessageResponse:
+    user_stmt = select(User).where(User.id == user_id)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    session_service = SessionService(db)
+    deleted_count = await session_service.delete_all_for_user(user.id)
+
+    audit_service = AuditService(db)
+    await audit_service.log_admin_action(
+        EventType.AUTH_SESSION_REVOKED,
+        admin,
+        target_type="user",
+        target_id=str(user.id),
+        target_email=user.email,
+        changes={"revoked_session_count": deleted_count},
+    )
+
+    return MessageResponse(message=f"Revoked {deleted_count} session(s)")
 
 
 # ============================================================================
@@ -1151,6 +1398,8 @@ async def list_audit_logs(
     event_type: str | None = Query(None, description="Filter by event type prefix"),
     actor_email: str | None = Query(None, description="Filter by actor email"),
     target_type: str | None = Query(None, description="Filter by target type"),
+    target_id: str | None = Query(None, description="Filter by target identifier"),
+    ip_address: str | None = Query(None, description="Filter by request IP address"),
     since: datetime | None = Query(None, description="Filter events after this timestamp"),
     until: datetime | None = Query(None, description="Filter events before this timestamp"),
 ) -> AuditLogList:
@@ -1164,6 +1413,10 @@ async def list_audit_logs(
         stmt = stmt.where(AuditLog.actor_email == actor_email.lower())
     if target_type:
         stmt = stmt.where(AuditLog.target_type == target_type)
+    if target_id:
+        stmt = stmt.where(AuditLog.target_id == target_id)
+    if ip_address:
+        stmt = stmt.where(AuditLog.ip_address == ip_address)
     if since:
         stmt = stmt.where(AuditLog.timestamp >= since)
     if until:
@@ -1182,21 +1435,7 @@ async def list_audit_logs(
     logs = result.scalars().all()
 
     return AuditLogList(
-        logs=[
-            AuditLogRead(
-                id=log.id,
-                timestamp=log.timestamp,
-                actor_id=log.actor_id,
-                actor_email=log.actor_email,
-                event_type=log.event_type,
-                target_type=log.target_type,
-                target_id=log.target_id,
-                ip_address=log.ip_address,
-                user_agent=log.user_agent,
-                details=json.loads(log.details) if log.details else None,
-            )
-            for log in logs
-        ],
+        logs=[_audit_log_to_read(log) for log in logs],
         total=total,
         page=page,
         page_size=page_size,

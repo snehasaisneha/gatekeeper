@@ -1,6 +1,11 @@
+from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field
 
 from gatekeeper.models.user import UserStatus
+from gatekeeper.schemas.audit import AuditLogRead
+from gatekeeper.schemas.security import BannedEmailRead, BannedIPRead
 from gatekeeper.schemas.user import UserRead
 
 
@@ -127,3 +132,53 @@ class DeploymentConfig(BaseModel):
             }
         }
     }
+
+
+class UserInvestigationAppAccess(BaseModel):
+    """Expanded app access information for a user."""
+
+    app_slug: str = Field(..., description="App slug")
+    app_name: str = Field(..., description="App name")
+    app_description: str | None = Field(None, description="App description")
+    app_url: str | None = Field(None, description="App URL")
+    role: str | None = Field(None, description="Granted role")
+    granted_at: datetime = Field(..., description="When access was granted")
+    granted_by: str | None = Field(None, description="Who granted access")
+
+
+class UserSessionRead(BaseModel):
+    """Active session metadata for admin investigation."""
+
+    id: UUID = Field(..., description="Session identifier")
+    auth_method: str | None = Field(None, description="Method used to create the session")
+    ip_address: str | None = Field(None, description="Session creation IP")
+    user_agent: str | None = Field(None, description="Original user agent")
+    created_at: datetime = Field(..., description="When the session was created")
+    last_seen_at: datetime = Field(..., description="Most recent activity timestamp")
+    expires_at: datetime = Field(..., description="When the session expires")
+
+
+class UserInvestigationRead(BaseModel):
+    """Investigation view for a user."""
+
+    user: UserRead = Field(..., description="User summary")
+    app_access: list[UserInvestigationAppAccess] = Field(
+        default_factory=list, description="Explicit app access grants"
+    )
+    active_sessions: list[UserSessionRead] = Field(
+        default_factory=list, description="Active sessions for the user"
+    )
+    recent_audit_logs: list[AuditLogRead] = Field(
+        default_factory=list, description="Recent audit logs involving the user"
+    )
+    active_ip_bans: list[BannedIPRead] = Field(
+        default_factory=list, description="Active IP bans associated with the user"
+    )
+    active_email_bans: list[BannedEmailRead] = Field(
+        default_factory=list, description="Active email bans associated with the user"
+    )
+    recent_ip_addresses: list[str] = Field(
+        default_factory=list, description="Most recent distinct IP addresses seen for the user"
+    )
+    last_auth_method: str | None = Field(None, description="Most recent successful auth method")
+    last_seen_at: datetime | None = Field(None, description="Most recent authenticated activity")

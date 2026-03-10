@@ -95,6 +95,7 @@ export interface UserAppAccess {
   app_url: string | null;
   role: string | null;
   granted_at: string;
+  granted_by?: string | null;
 }
 
 // Branding types
@@ -162,6 +163,7 @@ export interface BannedEmailList {
 
 export interface SecurityStats {
   blocked_today: number;
+  manual_bans_today: number;
   banned_ips: number;
   banned_emails: number;
   failed_logins_today: number;
@@ -179,6 +181,48 @@ export interface SecurityEvent {
 export interface SecurityEventList {
   events: SecurityEvent[];
   total: number;
+}
+
+export interface UserSession {
+  id: string;
+  auth_method: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+}
+
+export interface UserInvestigation {
+  user: User;
+  app_access: UserAppAccess[];
+  active_sessions: UserSession[];
+  recent_audit_logs: AuditLog[];
+  active_ip_bans: BannedIP[];
+  active_email_bans: BannedEmail[];
+  recent_ip_addresses: string[];
+  last_auth_method: string | null;
+  last_seen_at: string | null;
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  event_type: string;
+  target_type: string | null;
+  target_id: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  details: Record<string, unknown> | null;
+}
+
+export interface AuditLogList {
+  logs: AuditLog[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface BrandingAdmin extends Branding {
@@ -338,6 +382,9 @@ export const api = {
 
     getUser: (id: string) => request<User>(`/admin/users/${id}`),
 
+    getUserInvestigation: (id: string, auditLimit = 20) =>
+      request<UserInvestigation>(`/admin/users/${id}/investigation?audit_limit=${auditLimit}`),
+
     lookupUserByEmail: (email: string) =>
       request<UserLookupResponse>(`/admin/users/lookup?email=${encodeURIComponent(email)}`),
 
@@ -371,6 +418,16 @@ export const api = {
     deleteUser: (id: string) =>
       request<MessageResponse>(`/admin/users/${id}`, {
         method: 'DELETE',
+      }),
+
+    revokeUserSession: (userId: string, sessionId: string) =>
+      request<MessageResponse>(`/admin/users/${userId}/sessions/${sessionId}`, {
+        method: 'DELETE',
+      }),
+
+    revokeAllUserSessions: (userId: string) =>
+      request<MessageResponse>(`/admin/users/${userId}/sessions/revoke-all`, {
+        method: 'POST',
       }),
 
     // App management
@@ -430,6 +487,30 @@ export const api = {
 
     // Deployment config
     getDeploymentConfig: () => request<DeploymentConfig>('/admin/config'),
+
+    listAuditLogs: (params: {
+      page?: number;
+      pageSize?: number;
+      eventType?: string;
+      actorEmail?: string;
+      targetType?: string;
+      targetId?: string;
+      ipAddress?: string;
+      since?: string;
+      until?: string;
+    } = {}) => {
+      const search = new URLSearchParams();
+      if (params.page) search.set('page', String(params.page));
+      if (params.pageSize) search.set('page_size', String(params.pageSize));
+      if (params.eventType) search.set('event_type', params.eventType);
+      if (params.actorEmail) search.set('actor_email', params.actorEmail);
+      if (params.targetType) search.set('target_type', params.targetType);
+      if (params.targetId) search.set('target_id', params.targetId);
+      if (params.ipAddress) search.set('ip_address', params.ipAddress);
+      if (params.since) search.set('since', params.since);
+      if (params.until) search.set('until', params.until);
+      return request<AuditLogList>(`/admin/audit-logs?${search.toString()}`);
+    },
   },
 
   // Security endpoints

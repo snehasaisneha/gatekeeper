@@ -7,6 +7,7 @@ from sqlalchemy import select
 from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.security import BannedEmail, BannedIP, BanReason
+from gatekeeper.models.session import Session
 from gatekeeper.models.user import UserStatus
 
 from .conftest import create_test_otp, create_test_user, get_latest_otp
@@ -71,6 +72,31 @@ class TestSignIn:
         assert data["user"] is not None
         assert data["user"]["email"] == email
         assert "session" in response.cookies
+
+    async def test_signin_records_session_metadata(self, client: AsyncClient, db_session):
+        await create_test_user(db_session, "metadata@test.com", UserStatus.APPROVED)
+
+        await client.post("/api/v1/auth/signin", json={"email": "metadata@test.com"})
+        otp = await get_latest_otp(db_session, "metadata@test.com", OTPPurpose.SIGNIN)
+
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": "metadata@test.com", "code": otp},
+            headers={
+                "user-agent": "MetadataBrowser/1.0",
+                "x-forwarded-for": "203.0.113.10",
+            },
+        )
+        assert response.status_code == 200
+
+        session_result = await db_session.execute(
+            select(Session).where(Session.auth_method == "otp")
+        )
+        session = session_result.scalar_one_or_none()
+        assert session is not None
+        assert session.ip_address == "203.0.113.10"
+        assert session.user_agent == "MetadataBrowser/1.0"
+        assert session.last_seen_at is not None
 
     async def test_signin_auto_creates_pending_user_from_unknown_domain(
         self, client: AsyncClient, db_session
@@ -409,6 +435,38 @@ class TestRejectedUserSecurityBans:
         assert security_response.status_code == 200
         banned_ips = security_response.json()["banned_ips"]
         assert any(entry["ip_address"] == signup_ip for entry in banned_ips)
+
+    async def test_security_stats_split_manual_bans_from_blocked_requests(
+        self, client: AsyncClient, db_session
+    ):
+        admin = await create_test_user(
+            db_session, "stats-admin@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        admin_otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        signin_response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": admin_otp},
+        )
+        cookies = signin_response.cookies
+
+        await client.post(
+            "/api/v1/admin/security/banned-ips",
+            json={"ip_address": "198.51.100.10", "reason": "manual"},
+            cookies=cookies,
+        )
+        await client.post(
+            "/api/v1/admin/security/banned-emails",
+            json={"email": "blocked@example.com", "reason": "manual"},
+            cookies=cookies,
+        )
+
+        stats_response = await client.get("/api/v1/admin/security/stats", cookies=cookies)
+        assert stats_response.status_code == 200
+        data = stats_response.json()
+        assert data["manual_bans_today"] == 2
+        assert data["blocked_today"] == 0
 
 
 class TestPublicSurfaceProtection:

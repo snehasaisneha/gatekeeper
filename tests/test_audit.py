@@ -135,6 +135,42 @@ class TestAuditLogAPI:
         )
         assert response.status_code == 200
 
+    async def test_audit_logs_filter_by_target_id_and_ip(self, client: AsyncClient, db_session):
+        """Audit logs support target_id and ip_address filters."""
+        from gatekeeper.models.audit import AuditLog
+
+        admin = await create_test_user(
+            db_session, "admin5@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        signin_response = await client.post(
+            "/api/v1/auth/signin/verify", json={"email": admin.email, "code": otp}
+        )
+        cookies = signin_response.cookies
+
+        target_id = "target-123"
+        db_session.add(
+            AuditLog(
+                actor_email=admin.email,
+                event_type="admin.test.filtered",
+                target_type="user",
+                target_id=target_id,
+                ip_address="198.51.100.42",
+            )
+        )
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/v1/admin/audit-logs",
+            params={"target_id": target_id, "ip_address": "198.51.100.42"},
+            cookies=cookies,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] >= 1
+        assert any(log["target_id"] == target_id for log in data["logs"])
+
 
 class TestAuditLogging:
     """Tests for audit event logging during auth flows."""
