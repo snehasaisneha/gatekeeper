@@ -90,6 +90,24 @@ Common patterns:
 - `read`, `write`
 - `member`, `owner`
 
+## Gatekeeper app admin roles
+
+Gatekeeper app administration is separate from the runtime `X-Auth-Role` header, but it can now be derived from it.
+
+Each app has an `admin_roles` setting. If a user is granted one of those roles for that app, Gatekeeper treats them as an app admin for that app only. That gives them access to the scoped app-management surface in Gatekeeper, including grants, settings, scoped API keys, and app audit visibility.
+
+Example:
+
+- app roles: `viewer,editor,owner`
+- app admin roles: `owner`
+
+In that setup:
+
+- `viewer` and `editor` users can use the app normally
+- `owner` users also become Gatekeeper app admins for that app
+
+Gatekeeper still forwards the assigned role to the app in `X-Auth-Role`. Your app decides what that role means at runtime.
+
 ## nginx integration
 
 Typical protected-app snippet:
@@ -102,9 +120,66 @@ location = /_gk/validate {
     proxy_set_header Content-Length "";
     proxy_set_header X-Original-URI $request_uri;
     proxy_set_header X-GK-App docs;
+    proxy_set_header Host auth.example.com;
     proxy_set_header Cookie $http_cookie;
 }
 ```
+
+The `Host` header on the auth subrequest must be the Gatekeeper auth host, not the protected app host. That keeps the subrequest aligned with the auth layer and avoids cross-host validation bugs.
+
+### What the admin wizard generates
+
+When you create an app from the admin UI, the wizard generates a protected-app nginx block that:
+
+- proxies `/_gk/validate` to your Gatekeeper auth URL
+- sets `Host` to the Gatekeeper auth hostname
+- forwards `X-GK-App` with the app slug you registered
+- captures Gatekeeper response headers and forwards them to your upstream app
+- redirects `401` users to Gatekeeper signin
+- redirects `403` users to the Gatekeeper access-request page
+- routes `/logout` and `/signout` back through the auth host so users land on a clean signin flow
+
+### App-side authorization headers
+
+Gatekeeper authentication happens at nginx. Your app should trust the headers coming from that nginx tier, not from the public internet directly.
+
+Typical forwarding block:
+
+```nginx
+location / {
+    auth_request /_gk/validate;
+    auth_request_set $auth_user $upstream_http_x_auth_user;
+    auth_request_set $auth_role $upstream_http_x_auth_role;
+    auth_request_set $auth_name $upstream_http_x_auth_name;
+
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Auth-User $auth_user;
+    proxy_set_header X-Auth-Role $auth_role;
+    proxy_set_header X-Auth-Name $auth_name;
+}
+```
+
+The important headers are:
+
+- `X-Auth-User`: the authenticated email identity
+- `X-Auth-Role`: the Gatekeeper app role if one was granted
+- `X-Auth-Name`: the user display name when available
+
+### How your app should use those headers
+
+Treat `X-Auth-User` as the primary identity key. Most apps should map that header to their local session/user model on each request.
+
+Treat `X-Auth-Role` as an authorization hint coming from Gatekeeper. Gatekeeper does not enforce role semantics inside your app. You define what `viewer`, `editor`, `admin`, or any custom role means once the request reaches your application.
+
+Recommended pattern:
+
+- reject or redirect if `X-Auth-User` is missing
+- look up the user by `X-Auth-User`
+- map `X-Auth-Role` to your internal permissions
+- default safely if the role header is empty
+
+If you need app-local super-admin behavior, use a Gatekeeper app role like `admin` or `owner` and map that role in your own authorization layer.
 
 For internal apps on public hostnames, add:
 

@@ -22,6 +22,7 @@ from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.security import BannedIP, BanReason
 from gatekeeper.models.user import User, UserStatus
 from gatekeeper.rate_limit import limiter
+from gatekeeper.schemas.app import AppAdminScope
 from gatekeeper.schemas.auth import (
     AuthResponse,
     ErrorResponse,
@@ -92,6 +93,26 @@ def create_redirect(url: str, status_code: int = status.HTTP_302_FOUND) -> Redir
 async def _build_user_response(db: DbSession, user: User) -> UserResponse:
     """Build UserResponse with is_internal computed."""
     is_internal = await is_internal_user(db, user.email)
+    scope_stmt = (
+        select(UserAppAccess, App)
+        .join(App, App.id == UserAppAccess.app_id)
+        .where(
+            UserAppAccess.user_id == user.id,
+            UserAppAccess.is_app_admin == True,  # noqa: E712
+        )
+        .order_by(App.name.asc())
+    )
+    scope_result = await db.execute(scope_stmt)
+    app_admin_apps = [
+        AppAdminScope(
+            app_id=str(app.id),
+            app_slug=app.slug,
+            app_name=app.name,
+            app_description=app.description,
+            app_url=app.app_url,
+        )
+        for _, app in scope_result.all()
+    ]
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -102,6 +123,7 @@ async def _build_user_response(db: DbSession, user: User) -> UserResponse:
         is_internal=is_internal,
         notify_new_registrations=user.notify_new_registrations,
         notify_all_registrations=user.notify_all_registrations,
+        app_admin_apps=app_admin_apps,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )

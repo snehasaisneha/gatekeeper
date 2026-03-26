@@ -30,12 +30,14 @@ async def grant_app_access(
     user_id,
     app_id,
     role: str | None = None,
+    is_app_admin: bool = False,
 ) -> UserAppAccess:
     """Grant a user access to an app."""
     access = UserAppAccess(
         user_id=user_id,
         app_id=app_id,
         role=role,
+        is_app_admin=is_app_admin,
         granted_by="test",
     )
     db_session.add(access)
@@ -436,6 +438,140 @@ class TestAdminAppEndpoints:
         )
         users = app_detail.json()["users"]
         assert len(users) == 0
+
+    async def test_app_admin_sees_only_scoped_apps_and_scope_in_me(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        app_admin = await create_test_user(
+            db_session, "scoped-admin@approved-domain.com", UserStatus.APPROVED
+        )
+        scoped_app = await create_test_app(db_session, "scoped-app", "Scoped App")
+        other_app = await create_test_app(db_session, "other-app", "Other App")
+        await grant_app_access(
+            db_session, app_admin.id, scoped_app.id, role="owner", is_app_admin=True
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": app_admin.email})
+        otp = await get_latest_otp(db_session, app_admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": app_admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        me_response = await client.get("/api/v1/auth/me", cookies=cookies)
+        assert me_response.status_code == 200
+        assert me_response.json()["app_admin_apps"] == [
+            {
+                "app_id": str(scoped_app.id),
+                "app_slug": "scoped-app",
+                "app_name": "Scoped App",
+                "app_description": None,
+                "app_url": None,
+            }
+        ]
+
+        list_response = await client.get("/api/v1/admin/apps", cookies=cookies)
+        assert list_response.status_code == 200
+        assert [app["slug"] for app in list_response.json()["apps"]] == ["scoped-app"]
+        assert other_app.slug not in [app["slug"] for app in list_response.json()["apps"]]
+
+    async def test_app_admin_api_key_can_manage_access_and_is_audited(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        app_admin = await create_test_user(
+            db_session, "api-key-admin@approved-domain.com", UserStatus.APPROVED
+        )
+        target_user = await create_test_user(
+            db_session, "api-key-user@approved-domain.com", UserStatus.APPROVED
+        )
+        app = await create_test_app(db_session, "key-managed-app", "Key Managed App")
+        await grant_app_access(db_session, app_admin.id, app.id, role="owner", is_app_admin=True)
+
+        await client.post("/api/v1/auth/signin", json={"email": app_admin.email})
+        otp = await get_latest_otp(db_session, app_admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": app_admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        key_response = await client.post(
+            f"/api/v1/admin/apps/{app.slug}/api-keys",
+            json={"name": "CI key"},
+            cookies=cookies,
+        )
+        assert key_response.status_code == 201
+        plain_text_key = key_response.json()["plain_text_key"]
+
+        grant_response = await client.post(
+            f"/api/v1/admin/apps/{app.slug}/grant",
+            json={"email": target_user.email, "role": "editor"},
+            headers={"Authorization": f"Bearer {plain_text_key}"},
+        )
+        assert grant_response.status_code == 200
+
+        audit_response = await client.get(
+            f"/api/v1/admin/apps/{app.slug}/audit-logs",
+            headers={"Authorization": f"Bearer {plain_text_key}"},
+        )
+        assert audit_response.status_code == 200
+        assert any(
+            log["actor_email"] == "api-key:CI key" and log["event_type"] == "admin.access.granted"
+            for log in audit_response.json()["logs"]
+        )
+
+    async def test_app_admin_scope_is_derived_from_admin_roles(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        admin = await create_test_user(
+            db_session, "mapped-admin@approved-domain.com", UserStatus.APPROVED, is_admin=True
+        )
+        user = await create_test_user(
+            db_session, "mapped-user@approved-domain.com", UserStatus.APPROVED
+        )
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        create_response = await client.post(
+            "/api/v1/admin/apps",
+            json={
+                "slug": "mapped-admin-app",
+                "name": "Mapped Admin App",
+                "roles": "viewer,owner",
+                "admin_roles": "owner",
+            },
+            cookies=cookies,
+        )
+        assert create_response.status_code == 201
+        assert create_response.json()["admin_roles"] == "owner"
+
+        grant_response = await client.post(
+            "/api/v1/admin/apps/mapped-admin-app/grant",
+            json={"email": user.email, "role": "owner"},
+            cookies=cookies,
+        )
+        assert grant_response.status_code == 200
+
+        await client.post("/api/v1/auth/signin", json={"email": user.email})
+        user_otp = await get_latest_otp(db_session, user.email, OTPPurpose.SIGNIN)
+        user_response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": user.email, "code": user_otp},
+        )
+        user_cookies = user_response.cookies
+
+        me_response = await client.get("/api/v1/auth/me", cookies=user_cookies)
+        assert me_response.status_code == 200
+        assert [app["app_slug"] for app in me_response.json()["app_admin_apps"]] == [
+            "mapped-admin-app"
+        ]
 
     async def test_user_investigation_returns_access_sessions_and_activity(
         self, client: AsyncClient, db_session: AsyncSession

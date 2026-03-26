@@ -11,7 +11,7 @@ interface AdminPageProps {
 
 function AdminPageContent({ appName }: AdminPageProps) {
   const { user, loading: authLoading } = useRequireAuth();
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasAdminAccess } = useAuth();
 
   if (authLoading) {
     return (
@@ -28,7 +28,7 @@ function AdminPageContent({ appName }: AdminPageProps) {
     return null; // Will redirect in useRequireAuth
   }
 
-  if (!isAdmin) {
+  if (!hasAdminAccess) {
     return (
       <div className="min-h-screen flex flex-col">
         <TopBar appName={appName} />
@@ -52,7 +52,7 @@ function AdminPageContent({ appName }: AdminPageProps) {
     <div className="min-h-screen flex flex-col">
       <TopBar appName={appName} />
       <main className="flex-1 container mx-auto px-4 py-8">
-        <AdminDashboard />
+        <AdminDashboard isGlobalAdmin={isAdmin} />
       </main>
     </div>
   );

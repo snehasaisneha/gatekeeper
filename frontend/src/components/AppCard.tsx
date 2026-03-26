@@ -9,21 +9,21 @@ interface AppCardProps {
 
 export function AppCard({ name, description, url, role }: AppCardProps) {
   return (
-    <div className="border-4 border-black bg-white shadow-brutal hover:shadow-brutal-lg hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-      <div className="p-4 border-b-4 border-black">
+    <div className="flex h-full flex-col border-4 border-black bg-white shadow-brutal transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brutal-lg">
+      <div className="flex min-h-0 flex-1 flex-col border-b-4 border-black p-4">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-bold uppercase tracking-wider">{name}</h3>
           {role && (
             <span className="border-2 border-black px-2 py-0.5 text-xs font-bold uppercase shrink-0">
-              {role}
+              Role: {role}
             </span>
           )}
         </div>
         {description && (
-          <p className="text-sm text-gray-600 mt-2 line-clamp-2">{description}</p>
+          <p className="mt-2 line-clamp-3 text-sm text-gray-600">{description}</p>
         )}
       </div>
-      <div className="p-4">
+      <div className="mt-auto p-4">
         {url ? (
           <a
             href={url}

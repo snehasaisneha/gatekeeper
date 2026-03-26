@@ -10,6 +10,7 @@ export interface User {
   is_internal: boolean;
   notify_new_registrations: boolean;
   notify_all_registrations: boolean;
+  app_admin_apps: AppAdminScope[];
   created_at: string;
   updated_at: string;
 }
@@ -62,6 +63,7 @@ export interface App {
   description: string | null;
   app_url: string | null;
   roles: string;
+  admin_roles: string;
   created_at: string;
 }
 
@@ -78,14 +80,36 @@ export interface AppList {
 }
 
 export interface AppUserAccess {
+  user_id: string;
   email: string;
   role: string | null;
+  is_app_admin: boolean;
   granted_at: string;
   granted_by: string | null;
 }
 
+export interface AppApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_by_email: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  created_at: string;
+}
+
 export interface AppDetail extends App {
   users: AppUserAccess[];
+  api_keys: AppApiKey[];
+}
+
+export interface AppAdminScope {
+  app_id: string;
+  app_slug: string;
+  app_name: string;
+  app_description: string | null;
+  app_url: string | null;
 }
 
 export interface UserAppAccess {
@@ -433,13 +457,13 @@ export const api = {
     // App management
     listApps: () => request<AppList>('/admin/apps'),
 
-    createApp: (data: { slug: string; name: string; description?: string; app_url?: string }) =>
+    createApp: (data: { slug: string; name: string; description?: string; app_url?: string; roles?: string; admin_roles?: string }) =>
       request<App>('/admin/apps', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
 
-    updateApp: (slug: string, data: { name?: string; description?: string; app_url?: string; roles?: string }) =>
+    updateApp: (slug: string, data: { name?: string; description?: string; app_url?: string; roles?: string; admin_roles?: string }) =>
       request<App>(`/admin/apps/${slug}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -468,6 +492,20 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+
+    createAppApiKey: (slug: string, name: string) =>
+      request<{ api_key: AppApiKey; plain_text_key: string }>(`/admin/apps/${slug}/api-keys`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      }),
+
+    revokeAppApiKey: (slug: string, apiKeyId: string) =>
+      request<MessageResponse>(`/admin/apps/${slug}/api-keys/${apiKeyId}`, {
+        method: 'DELETE',
+      }),
+
+    listAppAuditLogs: (slug: string, page = 1, pageSize = 50) =>
+      request<AuditLogList>(`/admin/apps/${slug}/audit-logs?page=${page}&page_size=${pageSize}`),
 
     // Branding
     getBranding: () => request<BrandingAdmin>('/admin/branding'),

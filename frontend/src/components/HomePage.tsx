@@ -99,7 +99,12 @@ function HomePageContent({ appName }: HomePageProps) {
               )}
               {user.is_admin && (
                 <span className="border-2 border-black bg-black text-white px-2 py-0.5 text-xs font-bold uppercase">
-                  Admin
+                  Super Admin
+                </span>
+              )}
+              {!user.is_admin && user.app_admin_apps.length > 0 && (
+                <span className="border-2 border-black px-2 py-0.5 text-xs font-bold uppercase">
+                  App Admin
                 </span>
               )}
             </div>
@@ -110,6 +115,9 @@ function HomePageContent({ appName }: HomePageProps) {
             <h2 className="text-xl font-bold uppercase tracking-wider mb-6 border-b-4 border-black pb-2">
               Your Apps
             </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Open any app below to launch it with your current Gatekeeper session.
+            </p>
 
             {isLoadingApps ? (
               <div className="flex items-center justify-center py-16">

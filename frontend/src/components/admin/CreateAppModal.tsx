@@ -20,6 +20,8 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   const [slug, setSlug] = React.useState('');
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
+  const [roles, setRoles] = React.useState('admin,user');
+  const [adminRoles, setAdminRoles] = React.useState('admin');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -79,14 +81,19 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   const reservedAuthSlug = getReservedAuthSlug();
   const slugExists = existingApps.some((app) => app.slug === normalizedSlug);
   const slugReservedForAuth = normalizedSlug.length > 0 && normalizedSlug === reservedAuthSlug;
+  const normalizedRoles = roles.split(',').map((value) => value.trim()).filter(Boolean);
+  const normalizedAdminRoles = adminRoles.split(',').map((value) => value.trim()).filter(Boolean);
   const slugError = slugReservedForAuth
     ? `The slug "${normalizedSlug}" is reserved for the auth host.`
     : slugExists
       ? `An app with the slug "${normalizedSlug}" already exists.`
       : null;
+  const adminRolesError = normalizedAdminRoles.some((role) => !normalizedRoles.includes(role))
+    ? 'Admin roles must also exist in the roles list.'
+    : null;
 
   const handleSubmit = async () => {
-    if (!slug || !name || slugError) return;
+    if (!slug || !name || slugError || adminRolesError) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -97,6 +104,8 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
         name,
         description: description || undefined,
         app_url: getAppUrl() || undefined,
+        roles,
+        admin_roles: adminRoles,
       });
       onSuccess();
     } catch (err) {
@@ -111,7 +120,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
   };
 
   const handleNext = () => {
-    if (!slug || !name || slugError) return;
+    if (!slug || !name || slugError || adminRolesError) return;
     setStep(2);
   };
 
@@ -158,7 +167,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
         proxy_set_header Content-Length "";
         proxy_set_header X-Original-URI $request_uri;
         proxy_set_header X-GK-App ${slug || 'myapp'};
-        proxy_set_header Host $host;
+        proxy_set_header Host ${gkHost};
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -196,8 +205,6 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     location @denied {
         return 302 https://${gkHost}/request-access?app=${slug || 'myapp'};
     }
-}
-
 }`;
   };
 
@@ -232,7 +239,7 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
     </div>
   );
 
-  const canProceed = slug.length > 0 && name.length > 0 && !slugError;
+  const canProceed = slug.length > 0 && name.length > 0 && !slugError && !adminRolesError;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -352,6 +359,35 @@ export function CreateAppModal({ onClose, onSuccess }: CreateAppModalProps) {
                   placeholder="A brief description of your app"
                   slim
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider">Roles</label>
+                <Input
+                  value={roles}
+                  onChange={(e) => setRoles(e.target.value)}
+                  placeholder="admin,user"
+                  slim
+                />
+                <p className="text-xs text-gray-500">
+                  Comma-separated roles forwarded to your app in `X-Auth-Role`.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider">Admin Roles</label>
+                <Input
+                  value={adminRoles}
+                  onChange={(e) => setAdminRoles(e.target.value)}
+                  placeholder="admin"
+                  slim
+                />
+                <p className="text-xs text-gray-500">
+                  Users granted one of these roles become Gatekeeper app admins for this app.
+                </p>
+                {adminRolesError && (
+                  <p className="text-xs text-red-600">{adminRolesError}</p>
+                )}
               </div>
             </div>
           )}

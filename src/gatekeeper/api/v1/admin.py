@@ -3,13 +3,13 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gatekeeper.api.deps import AdminUser, DbSession
+from gatekeeper.api.deps import AdminUser, CurrentUser, CurrentUserOptional, DbSession
 from gatekeeper.config import get_settings
-from gatekeeper.models.app import App, UserAppAccess
+from gatekeeper.models.app import App, AppApiKey, UserAppAccess
 from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.branding import Branding
 from gatekeeper.models.domain import ApprovedDomain
@@ -27,6 +27,10 @@ from gatekeeper.schemas.admin import (
     UserSessionRead,
 )
 from gatekeeper.schemas.app import (
+    AppAdminScope,
+    AppApiKeyCreate,
+    AppApiKeyCreateResponse,
+    AppApiKeyRead,
     AppCreate,
     AppDetail,
     AppList,
@@ -45,6 +49,7 @@ from gatekeeper.schemas.branding import (
 )
 from gatekeeper.schemas.domain import DomainCreate, DomainList, DomainRead
 from gatekeeper.schemas.user import UserRead
+from gatekeeper.services.app_api_keys import AppApiKeyService
 from gatekeeper.services.audit import AuditService, EventType
 from gatekeeper.services.email import EmailService
 from gatekeeper.services.session import SessionService
@@ -72,6 +77,46 @@ def _get_reserved_app_slugs() -> set[str]:
     return reserved_slugs
 
 
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _normalize_role(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _role_grants_app_admin(app: App, role: str | None) -> bool:
+    normalized_role = _normalize_role(role)
+    if not normalized_role:
+        return False
+    admin_roles = {candidate.lower() for candidate in _split_csv(app.admin_roles)}
+    return normalized_role.lower() in admin_roles
+
+
+async def _sync_app_admin_grants(db: AsyncSession, app: App) -> None:
+    stmt = select(UserAppAccess).where(UserAppAccess.app_id == app.id)
+    result = await db.execute(stmt)
+    for access in result.scalars().all():
+        access.is_app_admin = _role_grants_app_admin(app, access.role)
+    await db.flush()
+
+
+def _validate_admin_roles(roles: str, admin_roles: str) -> None:
+    role_set = {role.lower() for role in _split_csv(roles)}
+    admin_role_set = {role.lower() for role in _split_csv(admin_roles)}
+    if not admin_role_set.issubset(role_set):
+        missing = sorted(admin_role_set - role_set)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=("Admin roles must also exist in the app role list: " + ", ".join(missing)),
+        )
+
+
 def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
     """Convert a User model to UserRead schema with computed is_internal."""
     domain = user.email.split("@")[-1].lower()
@@ -86,8 +131,172 @@ def _user_to_read(user: User, approved_domains: set[str]) -> UserRead:
         is_internal=is_internal,
         notify_new_registrations=user.notify_new_registrations,
         notify_all_registrations=user.notify_all_registrations,
+        app_admin_apps=[],
         created_at=user.created_at,
         updated_at=user.updated_at,
+    )
+
+
+async def _get_user_app_admin_scopes(db: AsyncSession, user: User) -> list[AppAdminScope]:
+    stmt = (
+        select(UserAppAccess, App)
+        .join(App, App.id == UserAppAccess.app_id)
+        .where(
+            UserAppAccess.user_id == user.id,
+            UserAppAccess.is_app_admin == True,  # noqa: E712
+        )
+        .order_by(App.name.asc())
+    )
+    result = await db.execute(stmt)
+    return [
+        AppAdminScope(
+            app_id=str(app.id),
+            app_slug=app.slug,
+            app_name=app.name,
+            app_description=app.description,
+            app_url=app.app_url,
+        )
+        for _, app in result.all()
+    ]
+
+
+async def _user_to_read_with_scopes(
+    db: AsyncSession, user: User, approved_domains: set[str]
+) -> UserRead:
+    return _user_to_read(user, approved_domains).model_copy(
+        update={"app_admin_apps": await _get_user_app_admin_scopes(db, user)}
+    )
+
+
+def _extract_api_key(
+    authorization: str | None,
+    x_api_key: str | None,
+) -> str | None:
+    if x_api_key:
+        return x_api_key.strip()
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
+async def _get_app_or_404(db: AsyncSession, slug: str) -> App:
+    stmt = select(App).where(App.slug == slug)
+    result = await db.execute(stmt)
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"App '{slug}' not found",
+        )
+    return app
+
+
+async def _user_can_admin_app(db: AsyncSession, user: User, app_id: uuid.UUID) -> bool:
+    if user.is_admin:
+        return True
+    stmt = select(UserAppAccess).where(
+        UserAppAccess.user_id == user.id,
+        UserAppAccess.app_id == app_id,
+        UserAppAccess.is_app_admin == True,  # noqa: E712
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none() is not None
+
+
+async def _resolve_app_actor(
+    db: AsyncSession,
+    app: App,
+    current_user: User | None,
+    authorization: str | None,
+    x_api_key: str | None,
+) -> dict[str, object]:
+    raw_api_key = _extract_api_key(authorization, x_api_key)
+    if raw_api_key:
+        api_key = await AppApiKeyService(db).resolve_key(raw_api_key)
+        if not api_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+        if api_key.app_id != app.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key is not valid for this app",
+            )
+        return {
+            "kind": "api_key",
+            "user": None,
+            "api_key": api_key,
+            "actor_id": None,
+            "actor_email": f"api-key:{api_key.name}",
+            "changes": {
+                "auth_method": "api_key",
+                "api_key_id": str(api_key.id),
+                "api_key_name": api_key.name,
+            },
+        }
+
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    if not await _user_can_admin_app(db, current_user, app.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required for this app",
+        )
+
+    return {
+        "kind": "user",
+        "user": current_user,
+        "api_key": None,
+        "actor_id": current_user.id,
+        "actor_email": current_user.email,
+        "changes": {"auth_method": "session"},
+    }
+
+
+async def _log_actor_event(
+    db: AsyncSession,
+    *,
+    event_type: str,
+    actor: dict[str, object],
+    target_type: str,
+    target_id: str,
+    details: dict[str, object] | None = None,
+) -> None:
+    audit_service = AuditService(db)
+    merged_details = dict(actor["changes"])  # type: ignore[arg-type]
+    if details:
+        merged_details.update(details)
+    await audit_service.log(
+        event_type,
+        actor=actor["user"] if actor["kind"] == "user" else None,  # type: ignore[arg-type]
+        actor_id=actor["actor_id"],  # type: ignore[arg-type]
+        actor_email=actor["actor_email"],  # type: ignore[arg-type]
+        target_type=target_type,
+        target_id=target_id,
+        details=merged_details,
+    )
+
+
+def _app_user_access_to_read(access: UserAppAccess, user: User) -> AppUserAccess:
+    return AppUserAccess(
+        user_id=str(user.id),
+        email=user.email,
+        role=access.role,
+        is_app_admin=access.is_app_admin,
+        granted_at=access.granted_at,
+        granted_by=access.granted_by,
+    )
+
+
+def _app_api_key_to_read(api_key: AppApiKey) -> AppApiKeyRead:
+    return AppApiKeyRead(
+        id=str(api_key.id),
+        name=api_key.name,
+        key_prefix=api_key.key_prefix,
+        created_by_email=api_key.created_by_email,
+        last_used_at=api_key.last_used_at,
+        revoked_at=api_key.revoked_at,
+        revoked_by=api_key.revoked_by,
+        created_at=api_key.created_at,
     )
 
 
@@ -293,7 +502,9 @@ async def lookup_user_by_email(
         return UserLookupResponse(exists=False, user=None)
 
     approved_domains = await _get_approved_domains_set(db)
-    return UserLookupResponse(exists=True, user=_user_to_read(user, approved_domains))
+    return UserLookupResponse(
+        exists=True, user=await _user_to_read_with_scopes(db, user, approved_domains)
+    )
 
 
 @router.get(
@@ -333,7 +544,7 @@ async def list_users(
     approved_domains = await _get_approved_domains_set(db)
 
     return UserList(
-        users=[_user_to_read(u, approved_domains) for u in users],
+        users=[await _user_to_read_with_scopes(db, u, approved_domains) for u in users],
         total=total,
         page=page,
         page_size=page_size,
@@ -359,7 +570,7 @@ async def list_pending_users(admin: AdminUser, db: DbSession) -> PendingUserList
     approved_domains = await _get_approved_domains_set(db)
 
     return PendingUserList(
-        users=[_user_to_read(u, approved_domains) for u in users],
+        users=[await _user_to_read_with_scopes(db, u, approved_domains) for u in users],
         total=total,
     )
 
@@ -386,7 +597,7 @@ async def get_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> UserR
         )
 
     approved_domains = await _get_approved_domains_set(db)
-    return _user_to_read(user, approved_domains)
+    return await _user_to_read_with_scopes(db, user, approved_domains)
 
 
 @router.get(
@@ -515,7 +726,7 @@ async def get_user_investigation(
             break
 
     return UserInvestigationRead(
-        user=_user_to_read(user, approved_domains),
+        user=await _user_to_read_with_scopes(db, user, approved_domains),
         app_access=app_access,
         active_sessions=active_sessions,
         recent_audit_logs=recent_audit_logs,
@@ -574,7 +785,7 @@ async def create_user(request: AdminCreateUser, admin: AdminUser, db: DbSession)
         await email_service.send_super_admin_welcome(email, admin.email)
 
     approved_domains = await _get_approved_domains_set(db)
-    return _user_to_read(user, approved_domains)
+    return await _user_to_read_with_scopes(db, user, approved_domains)
 
 
 @router.patch(
@@ -632,7 +843,7 @@ async def update_user(
         await email_service.send_registration_approved(user.email)
 
     approved_domains = await _get_approved_domains_set(db)
-    return _user_to_read(user, approved_domains)
+    return await _user_to_read_with_scopes(db, user, approved_domains)
 
 
 @router.post(
@@ -671,7 +882,7 @@ async def approve_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> U
     await email_service.send_registration_approved(user.email)
 
     approved_domains = await _get_approved_domains_set(db)
-    return _user_to_read(user, approved_domains)
+    return await _user_to_read_with_scopes(db, user, approved_domains)
 
 
 @router.post(
@@ -792,7 +1003,7 @@ async def reject_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> Us
     await db.flush()
     await db.refresh(user)
 
-    return _user_to_read(user, approved_domains)
+    return await _user_to_read_with_scopes(db, user, approved_domains)
 
 
 @router.delete(
@@ -915,15 +1126,28 @@ async def revoke_all_user_sessions(
     "/apps",
     response_model=AppList,
     summary="List all apps",
-    description="List all registered apps. Admin only.",
+    description="List all registered apps visible to the current admin scope.",
 )
-async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
-    count_stmt = select(func.count(App.id))
+async def list_apps(current_user: CurrentUser, db: DbSession) -> AppList:
+    stmt = select(App)
+    if not current_user.is_admin:
+        scopes = await _get_user_app_admin_scopes(db, current_user)
+        if not scopes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required",
+            )
+        scoped_app_ids = select(UserAppAccess.app_id).where(
+            UserAppAccess.user_id == current_user.id,
+            UserAppAccess.is_app_admin == True,  # noqa: E712
+        )
+        stmt = stmt.where(App.id.in_(scoped_app_ids))
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    stmt = select(App).order_by(App.created_at.desc())
-    result = await db.execute(stmt)
+    result = await db.execute(stmt.order_by(App.created_at.desc()))
     apps = result.scalars().all()
 
     return AppList(
@@ -935,6 +1159,7 @@ async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
                 description=a.description,
                 app_url=a.app_url,
                 roles=a.roles,
+                admin_roles=a.admin_roles,
                 created_at=a.created_at,
             )
             for a in apps
@@ -955,6 +1180,7 @@ async def list_apps(admin: AdminUser, db: DbSession) -> AppList:
     description="Register a new app. Admin only.",
 )
 async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> AppRead:
+    _validate_admin_roles(request.roles, request.admin_roles)
     if request.slug in _get_reserved_app_slugs():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -977,10 +1203,33 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
         description=request.description,
         app_url=request.app_url,
         roles=request.roles,
+        admin_roles=request.admin_roles,
     )
     db.add(app)
     await db.flush()
     await db.refresh(app)
+    await _log_actor_event(
+        db,
+        event_type=EventType.ADMIN_APP_CREATED,
+        actor={
+            "kind": "user",
+            "user": admin,
+            "api_key": None,
+            "actor_id": admin.id,
+            "actor_email": admin.email,
+            "changes": {"auth_method": "session"},
+        },
+        target_type="app",
+        target_id=str(app.id),
+        details={
+            "app_slug": app.slug,
+            "changes": {
+                "name": app.name,
+                "roles": app.roles,
+                "admin_roles": app.admin_roles,
+            },
+        },
+    )
 
     return AppRead(
         id=str(app.id),
@@ -989,6 +1238,7 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
         description=app.description,
         app_url=app.app_url,
         roles=app.roles,
+        admin_roles=app.admin_roles,
         created_at=app.created_at,
     )
 
@@ -1003,16 +1253,15 @@ async def create_app(request: AppCreate, admin: AdminUser, db: DbSession) -> App
     summary="Get app details",
     description="Get app details including users with explicit access. Admin only.",
 )
-async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
-    stmt = select(App).where(App.slug == slug)
-    result = await db.execute(stmt)
-    app = result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
+async def get_app(
+    slug: str,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+) -> AppDetail:
+    app = await _get_app_or_404(db, slug)
+    await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
 
     # Get users with explicit access (external users granted access)
     access_stmt = (
@@ -1024,15 +1273,13 @@ async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
     access_result = await db.execute(access_stmt)
     access_rows = access_result.all()
 
-    users = [
-        AppUserAccess(
-            email=user.email,
-            role=access.role,
-            granted_at=access.granted_at,
-            granted_by=access.granted_by,
-        )
-        for access, user in access_rows
-    ]
+    users = [_app_user_access_to_read(access, user) for access, user in access_rows]
+
+    api_keys_stmt = (
+        select(AppApiKey).where(AppApiKey.app_id == app.id).order_by(AppApiKey.created_at.desc())
+    )
+    api_keys_result = await db.execute(api_keys_stmt)
+    api_keys = [_app_api_key_to_read(api_key) for api_key in api_keys_result.scalars().all()]
 
     return AppDetail(
         id=str(app.id),
@@ -1041,8 +1288,10 @@ async def get_app(slug: str, admin: AdminUser, db: DbSession) -> AppDetail:
         description=app.description,
         app_url=app.app_url,
         roles=app.roles,
+        admin_roles=app.admin_roles,
         created_at=app.created_at,
         users=users,
+        api_keys=api_keys,
     )
 
 
@@ -1069,6 +1318,21 @@ async def delete_app(slug: str, admin: AdminUser, db: DbSession) -> MessageRespo
 
     await db.delete(app)
     await db.flush()
+    await _log_actor_event(
+        db,
+        event_type=EventType.ADMIN_APP_DELETED,
+        actor={
+            "kind": "user",
+            "user": admin,
+            "api_key": None,
+            "actor_id": admin.id,
+            "actor_email": admin.email,
+            "changes": {"auth_method": "session"},
+        },
+        target_type="app",
+        target_id=str(app.id),
+        details={"app_slug": app.slug},
+    )
 
     return MessageResponse(message=f"App '{slug}' deleted successfully")
 
@@ -1083,28 +1347,51 @@ async def delete_app(slug: str, admin: AdminUser, db: DbSession) -> MessageRespo
     summary="Update app",
     description="Update an app's details. Admin only.",
 )
-async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSession) -> AppRead:
-    stmt = select(App).where(App.slug == slug)
-    result = await db.execute(stmt)
-    app = result.scalar_one_or_none()
+async def update_app(
+    slug: str,
+    request: AppUpdate,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+) -> AppRead:
+    app = await _get_app_or_404(db, slug)
+    actor = await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
+    next_roles = request.roles if request.roles is not None else app.roles
+    next_admin_roles = request.admin_roles if request.admin_roles is not None else app.admin_roles
+    _validate_admin_roles(next_roles, next_admin_roles)
 
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
+    changes: dict[str, object] = {}
 
     if request.name is not None:
+        changes["name"] = {"from": app.name, "to": request.name}
         app.name = request.name
     if request.description is not None:
+        changes["description"] = {"from": app.description, "to": request.description}
         app.description = request.description
     if request.app_url is not None:
+        changes["app_url"] = {"from": app.app_url, "to": request.app_url}
         app.app_url = request.app_url
     if request.roles is not None:
+        changes["roles"] = {"from": app.roles, "to": request.roles}
         app.roles = request.roles
+    if request.admin_roles is not None:
+        changes["admin_roles"] = {"from": app.admin_roles, "to": request.admin_roles}
+        app.admin_roles = request.admin_roles
 
     await db.flush()
+    if request.roles is not None or request.admin_roles is not None:
+        await _sync_app_admin_grants(db, app)
     await db.refresh(app)
+    if changes:
+        await _log_actor_event(
+            db,
+            event_type=EventType.ADMIN_APP_UPDATED,
+            actor=actor,
+            target_type="app",
+            target_id=str(app.id),
+            details={"changes": changes, "app_slug": app.slug},
+        )
 
     return AppRead(
         id=str(app.id),
@@ -1113,6 +1400,7 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
         description=app.description,
         app_url=app.app_url,
         roles=app.roles,
+        admin_roles=app.admin_roles,
         created_at=app.created_at,
     )
 
@@ -1127,16 +1415,15 @@ async def update_app(slug: str, request: AppUpdate, admin: AdminUser, db: DbSess
     summary="List app users",
     description="List all users with explicit access to an app (external users). Admin only.",
 )
-async def list_app_users(slug: str, admin: AdminUser, db: DbSession) -> list[AppUserAccess]:
-    stmt = select(App).where(App.slug == slug)
-    result = await db.execute(stmt)
-    app = result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
+async def list_app_users(
+    slug: str,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+) -> list[AppUserAccess]:
+    app = await _get_app_or_404(db, slug)
+    await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
 
     access_stmt = (
         select(UserAppAccess, User)
@@ -1147,15 +1434,7 @@ async def list_app_users(slug: str, admin: AdminUser, db: DbSession) -> list[App
     access_result = await db.execute(access_stmt)
     access_rows = access_result.all()
 
-    return [
-        AppUserAccess(
-            email=user.email,
-            role=access.role,
-            granted_at=access.granted_at,
-            granted_by=access.granted_by,
-        )
-        for access, user in access_rows
-    ]
+    return [_app_user_access_to_read(access, user) for access, user in access_rows]
 
 
 @router.post(
@@ -1170,21 +1449,20 @@ async def list_app_users(slug: str, admin: AdminUser, db: DbSession) -> list[App
     description="Grant a user explicit access to an app with optional role. Admin only.",
 )
 async def grant_app_access(
-    slug: str, request: GrantAccess, admin: AdminUser, db: DbSession
+    slug: str,
+    request: GrantAccess,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
 ) -> MessageResponse:
-    # Find app
-    app_stmt = select(App).where(App.slug == slug)
-    app_result = await db.execute(app_stmt)
-    app = app_result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
+    app = await _get_app_or_404(db, slug)
+    actor = await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
+    requested_role = _normalize_role(request.role)
+    derived_app_admin = _role_grants_app_admin(app, requested_role)
 
     # Find user
-    user_stmt = select(User).where(User.email == request.email.lower())
+    user_stmt = select(User).where(User.email == request.email.lower().strip())
     user_result = await db.execute(user_stmt)
     user = user_result.scalar_one_or_none()
 
@@ -1204,10 +1482,30 @@ async def grant_app_access(
 
     if existing:
         # Update role if different
-        if existing.role != request.role:
-            existing.role = request.role
-            existing.granted_by = admin.email
+        if existing.role != requested_role or existing.is_app_admin != derived_app_admin:
+            previous = {"role": existing.role, "is_app_admin": existing.is_app_admin}
+            existing.role = requested_role
+            existing.is_app_admin = derived_app_admin
+            existing.granted_by = actor["actor_email"]  # type: ignore[index]
             await db.flush()
+            await _log_actor_event(
+                db,
+                event_type=EventType.ADMIN_ACCESS_GRANTED,
+                actor=actor,
+                target_type="app",
+                target_id=str(app.id),
+                details={
+                    "app_slug": app.slug,
+                    "target_email": user.email,
+                    "changes": {
+                        "previous": previous,
+                        "current": {
+                            "role": existing.role,
+                            "is_app_admin": existing.is_app_admin,
+                        },
+                    },
+                },
+            )
             return MessageResponse(message=f"Updated role for '{request.email}' on '{slug}'")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1218,8 +1516,9 @@ async def grant_app_access(
     access = UserAppAccess(
         user_id=user.id,
         app_id=app.id,
-        role=request.role,
-        granted_by=admin.email,
+        role=requested_role,
+        is_app_admin=derived_app_admin,
+        granted_by=actor["actor_email"],  # type: ignore[index]
     )
     db.add(access)
     await db.flush()
@@ -1231,11 +1530,27 @@ async def grant_app_access(
         app_name=app.name,
         app_description=app.description,
         app_url=app.app_url,
-        granted_by=admin.email,
+        granted_by=str(actor["actor_email"]),
     )
 
-    role_msg = f" with role '{request.role}'" if request.role else ""
-    return MessageResponse(message=f"Granted access to '{slug}' for '{request.email}'{role_msg}")
+    await _log_actor_event(
+        db,
+        event_type=EventType.ADMIN_ACCESS_GRANTED,
+        actor=actor,
+        target_type="app",
+        target_id=str(app.id),
+        details={
+            "app_slug": app.slug,
+            "target_email": user.email,
+            "changes": {"role": requested_role, "is_app_admin": derived_app_admin},
+        },
+    )
+
+    role_msg = f" with role '{requested_role}'" if requested_role else ""
+    app_admin_msg = " as app admin" if derived_app_admin else ""
+    return MessageResponse(
+        message=f"Granted access to '{slug}' for '{request.email}'{role_msg}{app_admin_msg}"
+    )
 
 
 @router.delete(
@@ -1251,21 +1566,14 @@ async def grant_app_access(
 async def revoke_app_access(
     slug: str,
     email: str = Query(..., description="Email of user to revoke access"),
-    admin: AdminUser = None,
+    current_user: CurrentUserOptional = None,
     db: DbSession = None,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
 ) -> MessageResponse:
     email = email.lower()
-
-    # Find app
-    app_stmt = select(App).where(App.slug == slug)
-    app_result = await db.execute(app_stmt)
-    app = app_result.scalar_one_or_none()
-
-    if not app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"App '{slug}' not found",
-        )
+    app = await _get_app_or_404(db, slug)
+    actor = await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
 
     # Find user
     user_stmt = select(User).where(User.email == email)
@@ -1295,7 +1603,140 @@ async def revoke_app_access(
     await db.delete(access)
     await db.flush()
 
+    await _log_actor_event(
+        db,
+        event_type=EventType.ADMIN_ACCESS_REVOKED,
+        actor=actor,
+        target_type="app",
+        target_id=str(app.id),
+        details={
+            "app_slug": app.slug,
+            "target_email": user.email,
+            "changes": {"role": access.role, "is_app_admin": access.is_app_admin},
+        },
+    )
+
     return MessageResponse(message=f"Revoked access to '{slug}' for '{email}'")
+
+
+@router.post(
+    "/apps/{slug}/api-keys",
+    response_model=AppApiKeyCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create app admin API key",
+    description="Create a scoped API key for managing a single app.",
+)
+async def create_app_api_key(
+    slug: str,
+    request: AppApiKeyCreate,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+) -> AppApiKeyCreateResponse:
+    app = await _get_app_or_404(db, slug)
+    actor = await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
+    api_key, plain_text_key = await AppApiKeyService(db).create_key(
+        app=app,
+        name=request.name,
+        created_by=actor["user"] if actor["kind"] == "user" else None,  # type: ignore[arg-type]
+        created_by_email=str(actor["actor_email"]),
+    )
+    await _log_actor_event(
+        db,
+        event_type=EventType.ADMIN_APP_API_KEY_CREATED,
+        actor=actor,
+        target_type="app",
+        target_id=str(app.id),
+        details={
+            "app_slug": app.slug,
+            "api_key_id": str(api_key.id),
+            "api_key_name": api_key.name,
+            "key_prefix": api_key.key_prefix,
+        },
+    )
+    return AppApiKeyCreateResponse(
+        api_key=_app_api_key_to_read(api_key),
+        plain_text_key=plain_text_key,
+    )
+
+
+@router.delete(
+    "/apps/{slug}/api-keys/{api_key_id}",
+    response_model=MessageResponse,
+    summary="Revoke app admin API key",
+    description="Revoke a scoped API key for managing a single app.",
+)
+async def revoke_app_api_key(
+    slug: str,
+    api_key_id: uuid.UUID,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+) -> MessageResponse:
+    app = await _get_app_or_404(db, slug)
+    actor = await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
+    stmt = select(AppApiKey).where(AppApiKey.id == api_key_id, AppApiKey.app_id == app.id)
+    result = await db.execute(stmt)
+    api_key = result.scalar_one_or_none()
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
+    api_key.revoked_at = datetime.utcnow()
+    api_key.revoked_by = str(actor["actor_email"])
+    await db.flush()
+    await _log_actor_event(
+        db,
+        event_type=EventType.ADMIN_APP_API_KEY_REVOKED,
+        actor=actor,
+        target_type="app",
+        target_id=str(app.id),
+        details={
+            "app_slug": app.slug,
+            "api_key_id": str(api_key.id),
+            "api_key_name": api_key.name,
+            "key_prefix": api_key.key_prefix,
+        },
+    )
+    return MessageResponse(message=f"Revoked API key '{api_key.name}'")
+
+
+@router.get(
+    "/apps/{slug}/audit-logs",
+    response_model=AuditLogList,
+    summary="List app audit logs",
+    description="Query audit logs related to a single app scope.",
+)
+async def list_app_audit_logs(
+    slug: str,
+    db: DbSession,
+    current_user: CurrentUserOptional,
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+) -> AuditLogList:
+    app = await _get_app_or_404(db, slug)
+    await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
+    stmt = (
+        select(AuditLog)
+        .where(
+            AuditLog.target_type == "app",
+            AuditLog.target_id == str(app.id),
+        )
+        .order_by(AuditLog.timestamp.desc())
+    )
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    result = await db.execute(stmt.offset((page - 1) * page_size).limit(page_size))
+    logs = result.scalars().all()
+    return AuditLogList(
+        logs=[_audit_log_to_read(log) for log in logs],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(

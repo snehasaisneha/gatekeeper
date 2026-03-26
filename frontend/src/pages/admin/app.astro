@@ -1,0 +1,10 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { AppDetailPage } from '@/components/admin/AppDetailPage';
+
+const appName = import.meta.env.PUBLIC_APP_NAME || 'Gatekeeper';
+---
+
+<Layout title="Admin App">
+  <AppDetailPage client:load appName={appName} slug="" />
+</Layout>

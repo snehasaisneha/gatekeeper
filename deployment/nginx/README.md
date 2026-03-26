@@ -115,6 +115,53 @@ If you control the app HTML too, add a page-level robots meta tag as defense in 
 The protected-app template also routes `/logout` and `/signout` back through Gatekeeper signin
 after clearing the session. That gives cached static apps a clean post-logout landing state.
 
+## App-Side Authorization Guide
+
+Gatekeeper handles identity at the nginx layer. Your protected app should read the headers nginx forwards after the `auth_request` succeeds.
+
+The protected-app template and admin wizard now assume this pattern:
+
+```nginx
+location = /_gk/validate {
+    internal;
+    proxy_pass https://auth.example.com/api/v1/auth/validate;
+    proxy_set_header Host auth.example.com;
+    proxy_set_header X-GK-App myapp;
+    proxy_set_header Cookie $http_cookie;
+}
+
+location / {
+    auth_request /_gk/validate;
+    auth_request_set $auth_user $upstream_http_x_auth_user;
+    auth_request_set $auth_role $upstream_http_x_auth_role;
+    auth_request_set $auth_name $upstream_http_x_auth_name;
+
+    proxy_set_header X-Auth-User $auth_user;
+    proxy_set_header X-Auth-Role $auth_role;
+    proxy_set_header X-Auth-Name $auth_name;
+}
+```
+
+Use the headers like this:
+
+- `X-Auth-User`: canonical authenticated identity, usually the email address
+- `X-Auth-Role`: Gatekeeper role for this app, if one was granted
+- `X-Auth-Name`: display name when available
+
+Recommended app behavior:
+
+- trust these headers only from your private nginx tier
+- use `X-Auth-User` to identify the current user in your app
+- map `X-Auth-Role` into your local authorization rules
+- handle empty `X-Auth-Role` safely for users without an explicit Gatekeeper role
+
+The wizard handles the auth wiring for you:
+
+- it points the validation subrequest at the Gatekeeper auth URL
+- it sets the subrequest `Host` header to the Gatekeeper auth host
+- it forwards the identity and role headers from Gatekeeper to your upstream app
+- it sends users to the Gatekeeper signin or request-access pages on `401` and `403`
+
 ### 4. Register App in Gatekeeper
 
 Via CLI:

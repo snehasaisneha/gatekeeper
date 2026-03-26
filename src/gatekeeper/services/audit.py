@@ -40,6 +40,8 @@ class EventType:
     ADMIN_APP_CREATED = "admin.app.created"
     ADMIN_APP_UPDATED = "admin.app.updated"
     ADMIN_APP_DELETED = "admin.app.deleted"
+    ADMIN_APP_API_KEY_CREATED = "admin.app.api_key.created"
+    ADMIN_APP_API_KEY_REVOKED = "admin.app.api_key.revoked"
     ADMIN_ACCESS_GRANTED = "admin.access.granted"
     ADMIN_ACCESS_REVOKED = "admin.access.revoked"
     ADMIN_DOMAIN_ADDED = "admin.domain.added"

@@ -7,6 +7,7 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
+  hasAdminAccess: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       error,
       isAdmin: user?.is_admin ?? false,
+      hasAdminAccess: (user?.is_admin ?? false) || (user?.app_admin_apps.length ?? 0) > 0,
       refresh,
     }),
     [user, loading, error, refresh]

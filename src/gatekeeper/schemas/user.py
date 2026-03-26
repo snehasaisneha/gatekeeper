@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
 
 from gatekeeper.models.user import UserStatus
+from gatekeeper.schemas.app import AppAdminScope
 
 
 class UserCreate(BaseModel):
@@ -31,6 +32,10 @@ class UserRead(BaseModel):
     )
     notify_all_registrations: bool = Field(
         default=False, description="Email notifications for all new sign-ups"
+    )
+    app_admin_apps: list[AppAdminScope] = Field(
+        default_factory=list,
+        description="Apps this user can administer without full platform admin access",
     )
     created_at: datetime = Field(..., description="Account creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")

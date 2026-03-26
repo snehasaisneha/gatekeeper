@@ -10,101 +10,88 @@ import { DomainManagement } from './DomainManagement';
 import { BrandingSettings } from './BrandingSettings';
 import { SecurityDashboard } from './SecurityDashboard';
 import { api } from '@/lib/api';
+import { useAuth } from '../AuthContext';
 import { UserPlus, AppWindow, Users, Clock, Globe, Palette, Shield, ExternalLink } from 'lucide-react';
 
 type TabType = 'users' | 'apps' | 'domains' | 'branding' | 'security';
 
-export function AdminDashboard() {
-  const [refreshKey, setRefreshKey] = React.useState(0);
-  const [activeTab, setActiveTab] = React.useState<TabType>('users');
-  const [showAddUserModal, setShowAddUserModal] = React.useState(false);
+interface AdminDashboardProps {
+  isGlobalAdmin: boolean;
+}
 
-  // Summary stats
+export function AdminDashboard({ isGlobalAdmin }: AdminDashboardProps) {
+  const { user } = useAuth();
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  const [activeTab, setActiveTab] = React.useState<TabType>(isGlobalAdmin ? 'users' : 'apps');
+  const [showAddUserModal, setShowAddUserModal] = React.useState(false);
   const [pendingCount, setPendingCount] = React.useState(0);
   const [totalUsers, setTotalUsers] = React.useState(0);
   const [totalApps, setTotalApps] = React.useState(0);
   const [totalDomains, setTotalDomains] = React.useState(0);
   const [blockedToday, setBlockedToday] = React.useState(0);
-  const [authIndexingProtection, setAuthIndexingProtection] = React.useState<
-    'checking' | 'ok' | 'warning'
-  >('checking');
+  const [authIndexingProtection, setAuthIndexingProtection] = React.useState<'checking' | 'ok' | 'warning'>('checking');
 
   React.useEffect(() => {
+    if (!isGlobalAdmin) return;
     async function fetchStats() {
-      // Fetch each stat independently so one failure doesn't break others
       try {
         const pendingRes = await api.admin.listPendingUsers();
         setPendingCount(pendingRes.total);
-      } catch { /* ignore */ }
-
+      } catch {}
       try {
         const usersRes = await api.admin.listUsers(1, 1);
         setTotalUsers(usersRes.total);
-      } catch { /* ignore */ }
-
+      } catch {}
       try {
         const appsRes = await api.admin.listApps();
         setTotalApps(appsRes.total);
-      } catch { /* ignore */ }
-
+      } catch {}
       try {
         const domainsRes = await api.admin.listDomains();
         setTotalDomains(domainsRes.total);
-      } catch { /* ignore */ }
-
+      } catch {}
       try {
         const securityRes = await api.security.getStats();
         setBlockedToday(securityRes.blocked_today);
-      } catch { /* ignore */ }
+      } catch {}
     }
     fetchStats();
-  }, [refreshKey]);
+  }, [isGlobalAdmin, refreshKey]);
 
   React.useEffect(() => {
+    if (!isGlobalAdmin) return;
     async function checkAuthIndexingProtection() {
       try {
         const [rootResponse, robotsResponse] = await Promise.all([
-          fetch('/', {
-            method: 'HEAD',
-            credentials: 'include',
-            cache: 'no-store',
-          }),
-          fetch('/robots.txt', {
-            credentials: 'include',
-            cache: 'no-store',
-          }),
+          fetch('/', { method: 'HEAD', credentials: 'include', cache: 'no-store' }),
+          fetch('/robots.txt', { credentials: 'include', cache: 'no-store' }),
         ]);
-
         const xRobotsTag = rootResponse.headers.get('x-robots-tag')?.toLowerCase() || '';
         const robotsText = robotsResponse.ok ? (await robotsResponse.text()).toLowerCase() : '';
-        const hasNoIndexHeader = xRobotsTag.includes('noindex');
-        const blocksCrawlers = robotsText.includes('disallow: /');
-
-        setAuthIndexingProtection(hasNoIndexHeader && blocksCrawlers ? 'ok' : 'warning');
+        setAuthIndexingProtection(
+          xRobotsTag.includes('noindex') && robotsText.includes('disallow: /') ? 'ok' : 'warning'
+        );
       } catch {
         setAuthIndexingProtection('warning');
       }
     }
-
     checkAuthIndexingProtection();
-  }, []);
+  }, [isGlobalAdmin]);
 
-  const handleRefresh = () => {
-    setRefreshKey((k) => k + 1);
-  };
-
-  const handleAddUserSuccess = () => {
-    setShowAddUserModal(false);
-    handleRefresh();
-  };
+  const handleRefresh = () => setRefreshKey((k) => k + 1);
 
   return (
     <div className="space-y-6" key={refreshKey}>
-      {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold uppercase tracking-wider">Super Admin</h1>
-          <p className="text-gray-500 text-sm">Manage users and apps across the platform</p>
+          <h1 className="text-2xl font-bold uppercase tracking-wider">
+            {isGlobalAdmin ? 'Super Admin' : 'App Admin'}
+          </h1>
+          <p className="text-gray-500 text-sm">
+            {isGlobalAdmin
+              ? 'Manage users and apps across the platform'
+              : 'Manage access and settings for your assigned apps'}
+          </p>
         </div>
         <a
           href="https://gatekeeper-gk.readthedocs.io/en/latest/guides/"
@@ -116,13 +103,11 @@ export function AdminDashboard() {
         </a>
       </div>
 
-      {authIndexingProtection === 'warning' && (
+      {isGlobalAdmin && authIndexingProtection === 'warning' && (
         <Alert className="border-2 border-yellow-500 bg-yellow-50">
           <AlertDescription className="text-sm">
             <strong>Auth host indexing protection is incomplete.</strong> Add
-            <code className="mx-1 bg-yellow-200 px-1 font-mono text-xs">
-              X-Robots-Tag: noindex, nofollow, noarchive
-            </code>
+            <code className="mx-1 bg-yellow-200 px-1 font-mono text-xs">X-Robots-Tag: noindex, nofollow, noarchive</code>
             to the public auth nginx server block and make sure
             <code className="mx-1 bg-yellow-200 px-1 font-mono text-xs">/robots.txt</code>
             disallows crawlers.
@@ -130,149 +115,117 @@ export function AdminDashboard() {
         </Alert>
       )}
 
-      {/* Stats Overview */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <button
-          onClick={() => setActiveTab('users')}
-          className="border-4 border-black p-4 hover:bg-gray-50 transition-colors text-left"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total Users</p>
-              <p className="text-3xl font-bold mt-1">{totalUsers}</p>
+      {isGlobalAdmin ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <button onClick={() => setActiveTab('users')} className="border-4 border-black p-4 hover:bg-gray-50 text-left">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total Users</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-3xl font-bold">{totalUsers}</p>
+              <Users className="h-8 w-8 text-gray-400" />
             </div>
-            <Users className="h-8 w-8 text-gray-400" />
-          </div>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`border-4 p-4 hover:bg-gray-50 transition-colors text-left ${
-            pendingCount > 0 ? 'border-orange-500 bg-orange-50' : 'border-black'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Pending</p>
-              <p className="text-3xl font-bold mt-1">{pendingCount}</p>
-            </div>
-            <Clock className={`h-8 w-8 ${pendingCount > 0 ? 'text-orange-500' : 'text-gray-400'}`} />
-          </div>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('apps')}
-          className="border-4 border-black p-4 hover:bg-gray-50 transition-colors text-left"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Apps</p>
-              <p className="text-3xl font-bold mt-1">{totalApps}</p>
-            </div>
-            <AppWindow className="h-8 w-8 text-gray-400" />
-          </div>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('domains')}
-          className="border-4 border-black p-4 hover:bg-gray-50 transition-colors text-left"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Domains</p>
-              <p className="text-3xl font-bold mt-1">{totalDomains}</p>
-            </div>
-            <Globe className="h-8 w-8 text-gray-400" />
-          </div>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('security')}
-          className={`border-4 p-4 hover:bg-gray-50 transition-colors text-left ${
-            blockedToday > 0 ? 'border-red-500 bg-red-50' : 'border-black'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Requests Blocked Today</p>
-              <p className="text-3xl font-bold mt-1">{blockedToday}</p>
-            </div>
-            <Shield className={`h-8 w-8 ${blockedToday > 0 ? 'text-red-500' : 'text-gray-400'}`} />
-          </div>
-        </button>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="flex items-center justify-between border-b-4 border-black">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
-              activeTab === 'users'
-                ? 'bg-black text-white'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            <Users className="h-4 w-4" />
-            Users
-            {pendingCount > 0 && (
-              <Badge variant="warning" className="ml-1">
-                {pendingCount}
-              </Badge>
-            )}
           </button>
           <button
+            onClick={() => setActiveTab('users')}
+            className={`border-4 p-4 hover:bg-gray-50 text-left ${pendingCount > 0 ? 'border-orange-500 bg-orange-50' : 'border-black'}`}
+          >
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Pending</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-3xl font-bold">{pendingCount}</p>
+              <Clock className={`h-8 w-8 ${pendingCount > 0 ? 'text-orange-500' : 'text-gray-400'}`} />
+            </div>
+          </button>
+          <button onClick={() => setActiveTab('apps')} className="border-4 border-black p-4 hover:bg-gray-50 text-left">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Apps</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-3xl font-bold">{totalApps}</p>
+              <AppWindow className="h-8 w-8 text-gray-400" />
+            </div>
+          </button>
+          <button onClick={() => setActiveTab('domains')} className="border-4 border-black p-4 hover:bg-gray-50 text-left">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Domains</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-3xl font-bold">{totalDomains}</p>
+              <Globe className="h-8 w-8 text-gray-400" />
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('security')}
+            className={`border-4 p-4 hover:bg-gray-50 text-left ${blockedToday > 0 ? 'border-red-500 bg-red-50' : 'border-black'}`}
+          >
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Requests Blocked Today</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-3xl font-bold">{blockedToday}</p>
+              <Shield className={`h-8 w-8 ${blockedToday > 0 ? 'text-red-500' : 'text-gray-400'}`} />
+            </div>
+          </button>
+        </div>
+      ) : (
+        <div className="border-4 border-black p-4 bg-gray-50">
+          <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Assigned Apps</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {user?.app_admin_apps.map((app) => (
+              <a
+                key={app.app_id}
+                href={`/admin/app?slug=${encodeURIComponent(app.app_slug)}`}
+                className="border-4 border-black bg-white p-4 hover:bg-black hover:text-white transition-colors"
+              >
+                <p className="font-bold uppercase tracking-wider">{app.app_name}</p>
+                <p className="mt-1 text-xs font-mono">{app.app_slug}</p>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between border-b-4 border-black">
+        <div className="flex">
+          {isGlobalAdmin && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm ${activeTab === 'users' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}
+            >
+              <Users className="h-4 w-4" />
+              Users
+              {pendingCount > 0 && <Badge variant="warning" className="ml-1">{pendingCount}</Badge>}
+            </button>
+          )}
+          <button
             onClick={() => setActiveTab('apps')}
-            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
-              activeTab === 'apps'
-                ? 'bg-black text-white'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
+            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm ${activeTab === 'apps' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}
           >
             <AppWindow className="h-4 w-4" />
             Apps
           </button>
-          <button
-            onClick={() => setActiveTab('domains')}
-            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
-              activeTab === 'domains'
-                ? 'bg-black text-white'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            <Globe className="h-4 w-4" />
-            Domains
-          </button>
-          <button
-            onClick={() => setActiveTab('branding')}
-            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
-              activeTab === 'branding'
-                ? 'bg-black text-white'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            <Palette className="h-4 w-4" />
-            Branding
-          </button>
-          <button
-            onClick={() => setActiveTab('security')}
-            className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm transition-colors ${
-              activeTab === 'security'
-                ? 'bg-black text-white'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
-          >
-            <Shield className="h-4 w-4" />
-            Security
-            {blockedToday > 0 && (
-              <Badge variant="destructive" className="ml-1">
-                {blockedToday}
-              </Badge>
-            )}
-          </button>
+          {isGlobalAdmin && (
+            <button
+              onClick={() => setActiveTab('domains')}
+              className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm ${activeTab === 'domains' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}
+            >
+              <Globe className="h-4 w-4" />
+              Domains
+            </button>
+          )}
+          {isGlobalAdmin && (
+            <button
+              onClick={() => setActiveTab('branding')}
+              className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm ${activeTab === 'branding' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}
+            >
+              <Palette className="h-4 w-4" />
+              Branding
+            </button>
+          )}
+          {isGlobalAdmin && (
+            <button
+              onClick={() => setActiveTab('security')}
+              className={`flex items-center gap-2 px-4 py-3 font-bold uppercase tracking-wider text-sm ${activeTab === 'security' ? 'bg-black text-white' : 'bg-white text-black hover:bg-gray-100'}`}
+            >
+              <Shield className="h-4 w-4" />
+              Security
+              {blockedToday > 0 && <Badge variant="destructive" className="ml-1">{blockedToday}</Badge>}
+            </button>
+          )}
         </div>
-
-        {activeTab === 'users' && (
+        {isGlobalAdmin && activeTab === 'users' && (
           <Button size="sm" onClick={() => setShowAddUserModal(true)}>
             <UserPlus className="h-4 w-4 mr-2" />
             Add User
@@ -280,18 +233,15 @@ export function AdminDashboard() {
         )}
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'users' && (
+      {isGlobalAdmin && activeTab === 'users' && (
         <div className="space-y-6">
           {showAddUserModal && (
-            <AddUserModal
-              onClose={() => setShowAddUserModal(false)}
-              onSuccess={handleAddUserSuccess}
-            />
+            <AddUserModal onClose={() => setShowAddUserModal(false)} onSuccess={() => {
+              setShowAddUserModal(false);
+              handleRefresh();
+            }} />
           )}
-
           {pendingCount > 0 && <PendingRegistrations onAction={handleRefresh} />}
-
           <div>
             <h2 className="text-lg font-bold uppercase tracking-wider mb-4">All Users</h2>
             <UserList onRefresh={handleRefresh} />
@@ -299,29 +249,10 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {activeTab === 'apps' && (
-        <div>
-          <AppManagement onRefresh={handleRefresh} />
-        </div>
-      )}
-
-      {activeTab === 'domains' && (
-        <div>
-          <DomainManagement onRefresh={handleRefresh} />
-        </div>
-      )}
-
-      {activeTab === 'branding' && (
-        <div>
-          <BrandingSettings onRefresh={handleRefresh} />
-        </div>
-      )}
-
-      {activeTab === 'security' && (
-        <div>
-          <SecurityDashboard onRefresh={handleRefresh} />
-        </div>
-      )}
+      {activeTab === 'apps' && <AppManagement onRefresh={handleRefresh} />}
+      {isGlobalAdmin && activeTab === 'domains' && <DomainManagement onRefresh={handleRefresh} />}
+      {isGlobalAdmin && activeTab === 'branding' && <BrandingSettings onRefresh={handleRefresh} />}
+      {isGlobalAdmin && activeTab === 'security' && <SecurityDashboard onRefresh={handleRefresh} />}
     </div>
   );
 }

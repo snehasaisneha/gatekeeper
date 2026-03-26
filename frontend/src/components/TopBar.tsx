@@ -9,7 +9,7 @@ interface TopBarProps {
 }
 
 export function TopBar({ appName = 'Gatekeeper' }: TopBarProps) {
-  const { user, isAdmin } = useAuth();
+  const { user, hasAdminAccess } = useAuth();
   const { branding } = useBranding();
   const [isOpen, setIsOpen] = React.useState(false);
   const [isSigningOut, setIsSigningOut] = React.useState(false);
@@ -95,7 +95,7 @@ export function TopBar({ appName = 'Gatekeeper' }: TopBarProps) {
                     → Settings
                   </a>
 
-                  {isAdmin && (
+                  {hasAdminAccess && (
                     <a
                       href="/admin"
                       onClick={() => setIsOpen(false)}

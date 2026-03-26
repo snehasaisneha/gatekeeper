@@ -13,6 +13,11 @@ class AppCreate(BaseModel):
         max_length=500,
         description="Comma-separated list of allowed roles",
     )
+    admin_roles: str = Field(
+        default="admin",
+        max_length=500,
+        description="Comma-separated roles that grant Gatekeeper app admin access",
+    )
 
 
 class AppRead(BaseModel):
@@ -24,6 +29,7 @@ class AppRead(BaseModel):
     description: str | None
     app_url: str | None
     roles: str
+    admin_roles: str
     created_at: datetime
 
 
@@ -45,6 +51,11 @@ class AppUpdate(BaseModel):
     description: str | None = Field(None, max_length=1000)
     app_url: str | None = Field(None, max_length=500)
     roles: str | None = Field(None, max_length=500, description="Comma-separated list of roles")
+    admin_roles: str | None = Field(
+        None,
+        max_length=500,
+        description="Comma-separated roles that grant Gatekeeper app admin access",
+    )
 
 
 class AppList(BaseModel):
@@ -55,10 +66,34 @@ class AppList(BaseModel):
 class AppUserAccess(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    user_id: str
     email: str
     role: str | None
+    is_app_admin: bool = False
     granted_at: datetime
     granted_by: str | None
+
+
+class AppApiKeyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    key_prefix: str
+    created_by_email: str | None
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+    revoked_by: str | None
+    created_at: datetime
+
+
+class AppApiKeyCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+
+class AppApiKeyCreateResponse(BaseModel):
+    api_key: AppApiKeyRead
+    plain_text_key: str
 
 
 class AppDetail(BaseModel):
@@ -70,8 +105,18 @@ class AppDetail(BaseModel):
     description: str | None
     app_url: str | None
     roles: str
+    admin_roles: str
     created_at: datetime
     users: list[AppUserAccess]
+    api_keys: list[AppApiKeyRead] = Field(default_factory=list)
+
+
+class AppAdminScope(BaseModel):
+    app_id: str
+    app_slug: str
+    app_name: str
+    app_description: str | None = None
+    app_url: str | None = None
 
 
 class GrantAccess(BaseModel):
