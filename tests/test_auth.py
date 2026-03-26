@@ -1,9 +1,11 @@
+import re
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
+from gatekeeper.config import Settings
 from gatekeeper.models.audit import AuditLog
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.security import BannedEmail, BannedIP, BanReason
@@ -579,6 +581,30 @@ class TestPublicSurfaceProtection:
         )
 
         assert response.status_code == 200
+
+
+class TestCorsConfig:
+    def test_cookie_domain_allows_all_subdomains(self):
+        settings = Settings(
+            secret_key="test-secret-key-that-is-at-least-32-characters-long",
+            cookie_domain=".example.com",
+        )
+        assert settings.cors_origin_regex == r"^https?://([a-zA-Z0-9-]+\.)*example\.com(:\d+)?$"
+        assert re.fullmatch(settings.cors_origin_regex, "https://auth.example.com")
+        assert re.fullmatch(settings.cors_origin_regex, "https://api.internal.example.com:8443")
+        assert not re.fullmatch(settings.cors_origin_regex, "https://evil-example.com")
+        assert not re.fullmatch(settings.cors_origin_regex, "https://example.org")
+
+    def test_localhost_fallback_for_dev(self):
+        settings = Settings(
+            secret_key="test-secret-key-that-is-at-least-32-characters-long",
+            app_url="http://localhost:8000",
+            frontend_url="http://localhost:4321",
+        )
+        assert settings.cors_origin_regex == r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+        assert re.fullmatch(settings.cors_origin_regex, "http://localhost:3000")
+        assert re.fullmatch(settings.cors_origin_regex, "http://127.0.0.1:4321")
+        assert not re.fullmatch(settings.cors_origin_regex, "https://app.example.com")
 
 
 class TestSignOut:

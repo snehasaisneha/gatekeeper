@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -110,6 +111,30 @@ class Settings(BaseSettings):
             return False
         domain = email.split("@")[-1].lower()
         return domain in self.accepted_domains_list
+
+    @computed_field
+    @property
+    def cors_origin_regex(self) -> str:
+        hosts: set[str] = set()
+        for candidate in (self.app_url, self.frontend_url):
+            hostname = urlparse(candidate).hostname
+            if hostname:
+                hosts.add(hostname)
+
+        if self.cookie_domain:
+            base_domain = self.cookie_domain.lstrip(".")
+            if base_domain:
+                escaped = base_domain.replace(".", r"\.")
+                return rf"^https?://([a-zA-Z0-9-]+\.)*{escaped}(:\d+)?$"
+
+        for host in list(hosts):
+            parts = host.split(".")
+            if len(parts) >= 2 and host not in {"localhost", "127.0.0.1"}:
+                base_domain = ".".join(parts[-2:])
+                escaped = base_domain.replace(".", r"\.")
+                return rf"^https?://([a-zA-Z0-9-]+\.)*{escaped}(:\d+)?$"
+
+        return r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 
 @lru_cache

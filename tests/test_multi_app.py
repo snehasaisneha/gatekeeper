@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gatekeeper.models.app import App, UserAppAccess
 from gatekeeper.models.otp import OTPPurpose
 from gatekeeper.models.session import Session
-from gatekeeper.models.user import UserStatus
+from gatekeeper.models.user import User, UserStatus
 
 from .conftest import create_test_user, get_latest_otp
 
@@ -438,6 +438,73 @@ class TestAdminAppEndpoints:
         )
         users = app_detail.json()["users"]
         assert len(users) == 0
+
+    async def test_grant_access_auto_creates_missing_user(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        admin = await create_test_user(
+            db_session,
+            "auto-create-admin@approved-domain.com",
+            UserStatus.APPROVED,
+            is_admin=True,
+        )
+        app = await create_test_app(db_session, "auto-create-app", "Auto Create App")
+
+        await client.post("/api/v1/auth/signin", json={"email": admin.email})
+        otp = await get_latest_otp(db_session, admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        grant_response = await client.post(
+            f"/api/v1/admin/apps/{app.slug}/grant",
+            json={"email": "new-app-user@external-domain.com", "role": "editor"},
+            cookies=cookies,
+        )
+        assert grant_response.status_code == 200
+
+        created_user_stmt = select(User).where(User.email == "new-app-user@external-domain.com")
+        created_user_result = await db_session.execute(created_user_stmt)
+        created_user = created_user_result.scalar_one_or_none()
+        assert created_user is not None
+        assert created_user.status == UserStatus.APPROVED
+
+        created_access_stmt = select(UserAppAccess).where(
+            UserAppAccess.app_id == app.id, UserAppAccess.user_id == created_user.id
+        )
+        created_access_result = await db_session.execute(created_access_stmt)
+        access = created_access_result.scalar_one_or_none()
+        assert access is not None
+
+    async def test_app_admin_can_auto_create_and_grant_missing_user(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        app_admin = await create_test_user(
+            db_session, "scoped-creator@approved-domain.com", UserStatus.APPROVED
+        )
+        app = await create_test_app(db_session, "scoped-create-app", "Scoped Create App")
+        await grant_app_access(db_session, app_admin.id, app.id, role="owner", is_app_admin=True)
+
+        await client.post("/api/v1/auth/signin", json={"email": app_admin.email})
+        otp = await get_latest_otp(db_session, app_admin.email, OTPPurpose.SIGNIN)
+        response = await client.post(
+            "/api/v1/auth/signin/verify",
+            json={"email": app_admin.email, "code": otp},
+        )
+        cookies = response.cookies
+
+        grant_response = await client.post(
+            f"/api/v1/admin/apps/{app.slug}/grant",
+            json={"email": "scoped-new-user@external-domain.com", "role": "viewer"},
+            cookies=cookies,
+        )
+        assert grant_response.status_code == 200
+
+        created_user_stmt = select(User).where(User.email == "scoped-new-user@external-domain.com")
+        created_user_result = await db_session.execute(created_user_stmt)
+        assert created_user_result.scalar_one_or_none() is not None
 
     async def test_app_admin_sees_only_scoped_apps_and_scope_in_me(
         self, client: AsyncClient, db_session: AsyncSession

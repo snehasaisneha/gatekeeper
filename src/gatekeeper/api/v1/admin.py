@@ -1460,16 +1460,36 @@ async def grant_app_access(
     actor = await _resolve_app_actor(db, app, current_user, authorization, x_api_key)
     requested_role = _normalize_role(request.role)
     derived_app_admin = _role_grants_app_admin(app, requested_role)
+    normalized_email = request.email.lower().strip()
 
     # Find user
-    user_stmt = select(User).where(User.email == request.email.lower().strip())
+    user_stmt = select(User).where(User.email == normalized_email)
     user_result = await db.execute(user_stmt)
     user = user_result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User '{request.email}' not found",
+        user = User(
+            email=normalized_email,
+            status=UserStatus.APPROVED,
+            is_admin=False,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+        await _log_actor_event(
+            db,
+            event_type=EventType.ADMIN_USER_CREATED,
+            actor=actor,
+            target_type="user",
+            target_id=str(user.id),
+            details={
+                "target_email": user.email,
+                "changes": {
+                    "source": "app_grant",
+                    "app_slug": app.slug,
+                    "status": user.status.value,
+                },
+            },
         )
 
     # Check existing access
