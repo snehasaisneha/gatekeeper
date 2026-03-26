@@ -34,6 +34,8 @@ function AppDetailPageContent({ appName, slug }: AppDetailPageProps) {
   const [grantEmail, setGrantEmail] = React.useState('');
   const [grantRole, setGrantRole] = React.useState('');
   const [apiKeyName, setApiKeyName] = React.useState('');
+  const [userRoles, setUserRoles] = React.useState<Record<string, string>>({});
+  const [userActionLoading, setUserActionLoading] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (slug) {
@@ -64,6 +66,11 @@ function AppDetailPageContent({ appName, slug }: AppDetailPageProps) {
       setEditUrl(appResponse.app_url || '');
       setEditRoles(appResponse.roles);
       setEditAdminRoles(appResponse.admin_roles);
+      setUserRoles(
+        Object.fromEntries(
+          appResponse.users.map((access) => [access.user_id, access.role || ''])
+        )
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load app settings');
     } finally {
@@ -140,6 +147,30 @@ function AppDetailPageContent({ appName, slug }: AppDetailPageProps) {
       setError(err instanceof ApiError ? err.message : 'Failed to grant access');
     } finally {
       setGrantState('idle');
+    }
+  }
+
+  function roleGrantsAppAdmin(role: string) {
+    const normalizedRole = role.trim().toLowerCase();
+    if (!normalizedRole) return false;
+    return editAdminRoles
+      .split(',')
+      .map((candidate) => candidate.trim().toLowerCase())
+      .filter(Boolean)
+      .includes(normalizedRole);
+  }
+
+  async function handleUpdateAccess(userId: string, email: string) {
+    setUserActionLoading(userId);
+    setError(null);
+    try {
+      const role = userRoles[userId]?.trim() || undefined;
+      await api.admin.grantAccess(resolvedSlug, email, role);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update access');
+    } finally {
+      setUserActionLoading(null);
     }
   }
 
@@ -312,6 +343,9 @@ function AppDetailPageContent({ appName, slug }: AppDetailPageProps) {
                     <p className="text-xs text-gray-500">
                       App admin status is derived from the app&apos;s configured admin roles: {app.admin_roles || 'none'}.
                     </p>
+                    <p className="text-xs text-gray-500">
+                      Update an existing user by changing their role below and saving the row.
+                    </p>
 
                     <div className="overflow-x-auto border-2 border-black">
                       <table className="w-full text-sm">
@@ -335,15 +369,47 @@ function AppDetailPageContent({ appName, slug }: AppDetailPageProps) {
                             app.users.map((access) => (
                               <tr key={access.user_id} className="border-t-2 border-black">
                                 <td className="p-3">{access.email}</td>
-                                <td className="p-3">{access.role ? <Badge>{access.role}</Badge> : <span className="text-gray-400">No role</span>}</td>
                                 <td className="p-3">
-                                  {access.is_app_admin ? <Badge variant="solid">App Admin</Badge> : <span className="text-gray-500">User</span>}
+                                  <select
+                                    value={userRoles[access.user_id] ?? access.role ?? ''}
+                                    onChange={(e) =>
+                                      setUserRoles((current) => ({
+                                        ...current,
+                                        [access.user_id]: e.target.value,
+                                      }))
+                                    }
+                                    className="h-10 min-w-32 border-2 border-black px-3 text-sm"
+                                  >
+                                    <option value="">No role</option>
+                                    {roleOptions.map((role) => (
+                                      <option key={role} value={role}>
+                                        {role}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="p-3">
+                                  {roleGrantsAppAdmin(userRoles[access.user_id] ?? access.role ?? '') ? (
+                                    <Badge variant="solid">App Admin</Badge>
+                                  ) : (
+                                    <span className="text-gray-500">User</span>
+                                  )}
                                 </td>
                                 <td className="p-3 text-gray-500">{new Date(access.granted_at).toLocaleString()}</td>
                                 <td className="p-3 text-right">
-                                  <Button variant="ghost" size="icon" onClick={() => handleRevoke(access.email)}>
-                                    <Trash2 className="h-4 w-4 text-red-600" />
-                                  </Button>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => handleUpdateAccess(access.user_id, access.email)}
+                                      disabled={userActionLoading === access.user_id}
+                                    >
+                                      {userActionLoading === access.user_id ? 'Saving' : 'Save'}
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => handleRevoke(access.email)}>
+                                      <Trash2 className="h-4 w-4 text-red-600" />
+                                    </Button>
+                                  </div>
                                 </td>
                               </tr>
                             ))
