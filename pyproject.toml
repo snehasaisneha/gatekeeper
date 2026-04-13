@@ -32,7 +32,7 @@ docs = [
     "sphinx-autodoc2>=0.5.0",
     "sphinx-copybutton>=0.5.2",
     "sphinx-design>=0.7.0",
-    "sphinx-togglebutton>=0.4.4",
+    "sphinx-togglebutton>=0.4.5",
 ]
 
 dev = [
